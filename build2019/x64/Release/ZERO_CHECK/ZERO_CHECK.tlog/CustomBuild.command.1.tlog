@@ -1,0 +1,10 @@
+^D:\CODE\MOBURIGLOGIC\BUILD2019\CMAKEFILES\314C7599DE42CDCCF18F5F7A987E054D\GENERATE.STAMP.RULE
+setlocal
+C:\Users\dalaotian\scoop\apps\cmake\current\bin\cmake.exe -SD:/Code/MoBuRigLogic -BD:/Code/MoBuRigLogic/build2019 --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file D:/Code/MoBuRigLogic/build2019/moburiglogic.sln
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

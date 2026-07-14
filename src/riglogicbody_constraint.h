@@ -63,6 +63,12 @@ public:
     FBPropertyInt     LodLevel;       //!< 驱动集 LOD（默认 0）
     FBPropertyDouble  LastSolveMs;    //!< 只读：上次求解耗时(ms)，性能观测
 
+    //--- Layout 查询接口
+    bool   BindingsReady() const { return mBindingsReady; }
+    size_t InputCount()    const { return mInputs.size(); }
+    size_t OutputCount()   const { return mOutputs.size(); }
+    bool   DnaLoaded()     const { return mRig != nullptr; }
+
 private:
     struct InputBinding {
         FBAnimationNode* node;        // 驱动关节 Rotation 输入（Lcl 欧拉度）
@@ -86,6 +92,7 @@ private:
     trio::FileStream*        mStream  = nullptr;
     rl4::RigLogic*           mRig     = nullptr;
     rl4::RigInstance*        mInst    = nullptr;
+    std::string              mLoadedDnaPath;   // 已加载路径（换 DNA 检测）
 
     std::vector<InputBinding>  mInputs;
     std::vector<OutputBinding> mOutputs;

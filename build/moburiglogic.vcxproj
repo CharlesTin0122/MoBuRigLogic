@@ -374,6 +374,8 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
     <ClInclude Include="D:\Code\MoBuRigLogic\src\riglogicbody_constraint.h" />
     <ClCompile Include="D:\Code\MoBuRigLogic\src\riglogichead_constraint.cxx" />
     <ClInclude Include="D:\Code\MoBuRigLogic\src\riglogichead_constraint.h" />
+    <ClCompile Include="D:\Code\MoBuRigLogic\src\riglogic_layouts.cxx" />
+    <ClInclude Include="D:\Code\MoBuRigLogic\src\riglogic_layouts.h" />
   </ItemGroup>
   <ItemGroup />
   <ItemGroup>

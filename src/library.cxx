@@ -7,6 +7,8 @@ FBLibraryDeclare( moburiglogic )
 {
     FBLibraryRegister( RigLogicBodyConstraint );
     FBLibraryRegister( RigLogicHeadConstraint );
+    FBLibraryRegister( RigLogicBodyLayout );
+    FBLibraryRegister( RigLogicHeadLayout );
 }
 FBLibraryDeclareEnd;
 

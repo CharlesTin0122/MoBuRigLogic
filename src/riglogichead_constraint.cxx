@@ -125,8 +125,17 @@ bool RigLogicHeadConstraint::FBCreate()
 
     mGroupSkeleton = ReferenceGroupAdd( "Skeleton Root", 1 );
     Deformer = false;
-    HasLayout = false;
+    HasLayout = true;
     return true;
+}
+
+void RigLogicHeadConstraint::ZeroAllExpressions()
+{
+    for (const auto& ei : mExprInputs)
+    {
+        double v = 0.0;
+        ei.prop->SetData( &v );
+    }
 }
 
 void RigLogicHeadConstraint::FBDestroy()
@@ -153,6 +162,7 @@ bool RigLogicHeadConstraint::LoadDna()
     mInst = rl4::RigInstance::create( mRig );
     if (!mInst) { ReleaseDna(); return false; }
     mInst->setLOD( static_cast<std::uint16_t>( (int)LodLevel ) );
+    mLoadedDnaPath = path;
     return true;
 }
 
@@ -364,7 +374,10 @@ bool RigLogicHeadConstraint::BuildBindings()
 void RigLogicHeadConstraint::SetupAllAnimationNodes()
 {
     if (!ReferenceGet( mGroupSkeleton, 0 )) return;
-    if (!mRig && !LoadDna()) return;
+    // 路径变化或未加载时（重新）加载 DNA —— 修复换 DNA 后仍用旧数据
+    const char* p = DnaPath.AsString();
+    const std::string want = p ? p : "";
+    if ((!mRig || want != mLoadedDnaPath) && !LoadDna()) return;
     BuildBindings();
     mLastEvalId = -1;
 }

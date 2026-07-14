@@ -56,6 +56,16 @@ public:
     FBPropertyInt     InputMode;      //!< 0=表情属性(可K帧) 1=FaceBoard面板(GUI控制器)
     FBPropertyDouble  LastSolveMs;    //!< 只读：上次求解耗时
 
+    //--- Layout 查询/操作接口
+    bool   BindingsReady() const { return mBindingsReady; }
+    size_t ExprCount()     const { return mExprInputs.size(); }
+    size_t GuiCount()      const { return mGuiInputs.size(); }
+    size_t NeckCount()     const { return mNeckInputs.size(); }
+    size_t JointOutCount() const { return mJointOutputs.size(); }
+    size_t BsCount()       const { return mBsOutputs.size(); }
+    bool   DnaLoaded()     const { return mRig != nullptr; }
+    void   ZeroAllExpressions();   //!< 全部表情属性归零（表情属性模式用）
+
 private:
     struct ExprInput {                // 表情控制：约束上的可K帧属性
         FBProperty*   prop;
@@ -93,6 +103,7 @@ private:
     trio::FileStream*        mStream = nullptr;
     rl4::RigLogic*           mRig    = nullptr;
     rl4::RigInstance*        mInst   = nullptr;
+    std::string              mLoadedDnaPath;   // 已加载路径（换 DNA 检测）
 
     std::vector<ExprInput>   mExprInputs;
     std::vector<GuiInput>    mGuiInputs;

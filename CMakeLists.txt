@@ -18,6 +18,8 @@ add_library(${PROJECT_NAME} SHARED
     src/riglogicbody_constraint.h
     src/riglogichead_constraint.cxx
     src/riglogichead_constraint.h
+    src/riglogic_layouts.cxx
+    src/riglogic_layouts.h
 )
 
 # MoBu 插件后缀是 .dll，放 plugins 目录即可；产物按版本命名区分

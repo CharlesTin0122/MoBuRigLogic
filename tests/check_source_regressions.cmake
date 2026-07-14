@@ -28,7 +28,11 @@ assert_not_contains("${cmake_content}" "MotionBuilder 2019" "MotionBuilder 2019 
 
 assert_contains("${cmake_content}" [=[${CMAKE_CURRENT_SOURCE_DIR}/third_party/OpenRigLogic]=]
                 "vendored OpenRigLogic root")
-assert_contains("${cmake_content}" [=[include/riglogic/RigLogic.h]=]
+assert_contains("${cmake_content}" [=[${ORL_ROOT}/include]=]
+                "vendored OpenRigLogic include path")
+assert_not_contains("${cmake_content}" [=[    "${ORL_INCLUDE_DIR}")]=]
+                    "self-referential OpenRigLogic include path")
+assert_contains("${cmake_content}" [=[${ORL_INCLUDE_DIR}/riglogic/RigLogic.h]=]
                 "OpenRigLogic header sentinel check")
 assert_contains("${cmake_content}" [=[lib/win64/Release/riglogic413_2_5.lib]=]
                 "vendored OpenRigLogic static library")

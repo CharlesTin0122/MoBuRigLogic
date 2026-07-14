@@ -4,9 +4,34 @@ project(moburiglogic LANGUAGES CXX)
 # ------------------------------------------------------------------ MotionBuilder 2024 paths
 set(MOBU_ROOT "C:/Program Files/Autodesk/MotionBuilder 2024"
     CACHE PATH "MotionBuilder 2024 installation directory")
-set(ORL_ROOT "D:/Code/OpenRigLogic" CACHE PATH "OpenRigLogic repository")
-set(ORL_LIB "${ORL_ROOT}/build/Release/riglogic413_2_5.lib"
-    CACHE FILEPATH "RigLogic static library")
+set(ORL_ROOT
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/OpenRigLogic")
+set(ORL_INCLUDE_DIR
+    "${ORL_ROOT}/include")
+set(ORL_LIB
+    "${ORL_ROOT}/lib/win64/Release/riglogic413_2_5.lib")
+set(ORL_HEADER_SENTINEL
+    "${ORL_INCLUDE_DIR}/riglogic/RigLogic.h")
+set(ORL_LICENSE
+    "${ORL_ROOT}/LICENSE")
+
+if(NOT EXISTS "${ORL_HEADER_SENTINEL}")
+    message(FATAL_ERROR
+        "Vendored OpenRigLogic header is missing: ${ORL_HEADER_SENTINEL}. "
+        "Restore third_party/OpenRigLogic before configuring the project.")
+endif()
+
+if(NOT EXISTS "${ORL_LIB}")
+    message(FATAL_ERROR
+        "Vendored OpenRigLogic static library is missing: ${ORL_LIB}. "
+        "Restore third_party/OpenRigLogic before configuring the project.")
+endif()
+
+if(NOT EXISTS "${ORL_LICENSE}")
+    message(FATAL_ERROR
+        "Vendored OpenRigLogic license is missing: ${ORL_LICENSE}. "
+        "Restore third_party/OpenRigLogic before configuring the project.")
+endif()
 
 set(ORSDK "${MOBU_ROOT}/OpenRealitySDK")
 
@@ -29,7 +54,7 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
 
 target_include_directories(${PROJECT_NAME} PRIVATE
     "${ORSDK}/include"
-    "${ORL_ROOT}/include"
+    "${ORL_INCLUDE_DIR}"
 )
 
 target_link_directories(${PROJECT_NAME} PRIVATE "${ORSDK}/lib/x64")

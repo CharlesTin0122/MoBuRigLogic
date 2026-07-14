@@ -8,6 +8,7 @@
  */
 
 #include "riglogichead_constraint.h"
+#include "riglogic_common.h"
 
 #include <dna/BinaryStreamReader.h>
 #include <dna/Configuration.h>
@@ -157,11 +158,18 @@ bool RigLogicHeadConstraint::LoadDna()
     mReader->read();
     if (!sc::Status::isOk()) { ReleaseDna(); return false; }
 
+    const auto lodCount = mReader->getLODCount();
+    if (lodCount == 0) { ReleaseDna(); return false; }
+    LodLevel.SetMinMax( 0.0, static_cast<double>( lodCount - 1u ), true, true );
+
     mRig = rl4::RigLogic::create( mReader );
     if (!mRig) { ReleaseDna(); return false; }
     mInst = rl4::RigInstance::create( mRig );
     if (!mInst) { ReleaseDna(); return false; }
-    mInst->setLOD( static_cast<std::uint16_t>( (int)LodLevel ) );
+
+    const auto validLod = moburiglogic::ClampLod( static_cast<int>( LodLevel ), lodCount );
+    LodLevel = static_cast<int>( validLod );
+    mInst->setLOD( validLod );
     mLoadedDnaPath = path;
     return true;
 }
@@ -174,7 +182,14 @@ void RigLogicHeadConstraint::ReleaseDna()
     if (mStream) { trio::FileStream::destroy( mStream );        mStream = nullptr; }
 }
 
-bool RigLogicHeadConstraint::BuildBindings()
+std::uint16_t RigLogicHeadConstraint::ResolveLod() const
+{
+    if (!mReader) return 0;
+    return moburiglogic::ClampLod(
+        static_cast<int>( LodLevel ), mReader->getLODCount() );
+}
+
+bool RigLogicHeadConstraint::BuildBindings( std::uint16_t lod )
 {
     mExprInputs.clear();
     mGuiInputs.clear();
@@ -283,7 +298,6 @@ bool RigLogicHeadConstraint::BuildBindings()
     }
 
     // ---- 输出①：面部关节（驱动集过滤，跳过根与输入关节）----
-    const auto lod = static_cast<std::uint16_t>( (int)LodLevel );
     auto varAttrs = mRig->getJointVariableAttributeIndices( lod );
     std::map<std::uint32_t, bool> driven;
     for (auto a : varAttrs) driven[ a / 9 ] = true;
@@ -378,7 +392,11 @@ void RigLogicHeadConstraint::SetupAllAnimationNodes()
     const char* p = DnaPath.AsString();
     const std::string want = p ? p : "";
     if ((!mRig || want != mLoadedDnaPath) && !LoadDna()) return;
-    BuildBindings();
+
+    const auto validLod = ResolveLod();
+    LodLevel = static_cast<int>( validLod );
+    mInst->setLOD( validLod );
+    BuildBindings( validLod );
     mLastEvalId = -1;
 }
 

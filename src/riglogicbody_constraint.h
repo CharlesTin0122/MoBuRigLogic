@@ -85,7 +85,8 @@ private:
 
     bool  LoadDna();                  // 读 DNA + 建 RigLogic/RigInstance
     void  ReleaseDna();
-    bool  BuildBindings();            // 按骨架根扫描场景关节，建输入/输出映射
+    std::uint16_t ResolveLod() const;
+    bool  BuildBindings( std::uint16_t lod ); // 按骨架根扫描场景关节，建输入/输出映射
 
     // RigLogic 运行时（原生指针 + 手动 create/destroy，工厂模式）
     dna::BinaryStreamReader* mReader  = nullptr;

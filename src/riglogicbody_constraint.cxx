@@ -9,6 +9,7 @@
 
 //--- Class declaration
 #include "riglogicbody_constraint.h"
+#include "riglogic_common.h"
 
 //--- OpenRigLogic
 #include <dna/BinaryStreamReader.h>
@@ -157,13 +158,18 @@ bool RigLogicBodyConstraint::LoadDna()
     mReader->read();
     if (!sc::Status::isOk()) { ReleaseDna(); return false; }
 
+    const auto lodCount = mReader->getLODCount();
+    if (lodCount == 0) { ReleaseDna(); return false; }
+    LodLevel.SetMinMax( 0.0, static_cast<double>( lodCount - 1u ), true, true );
+
     mRig = rl4::RigLogic::create( mReader );
     if (!mRig) { ReleaseDna(); return false; }
     mInst = rl4::RigInstance::create( mRig );
     if (!mInst) { ReleaseDna(); return false; }
 
-    const auto lod = static_cast<std::uint16_t>( (int)LodLevel );
-    mInst->setLOD( lod );
+    const auto validLod = moburiglogic::ClampLod( static_cast<int>( LodLevel ), lodCount );
+    LodLevel = static_cast<int>( validLod );
+    mInst->setLOD( validLod );
     mLoadedDnaPath = path;
     return true;
 }
@@ -176,10 +182,17 @@ void RigLogicBodyConstraint::ReleaseDna()
     if (mStream) { trio::FileStream::destroy( mStream );      mStream = nullptr; }
 }
 
+std::uint16_t RigLogicBodyConstraint::ResolveLod() const
+{
+    if (!mReader) return 0;
+    return moburiglogic::ClampLod(
+        static_cast<int>( LodLevel ), mReader->getLODCount() );
+}
+
 /************************************************
  *  绑定构建：DNA 关节名 ↔ 场景模型
  ************************************************/
-bool RigLogicBodyConstraint::BuildBindings()
+bool RigLogicBodyConstraint::BuildBindings( std::uint16_t lod )
 {
     mInputs.clear();
     mOutputs.clear();
@@ -242,7 +255,6 @@ bool RigLogicBodyConstraint::BuildBindings()
     }
 
     // ---- 输出：驱动集过滤（LOD），排除输入关节与根关节 ----
-    const auto lod = static_cast<std::uint16_t>( (int)LodLevel );
     auto varAttrs = mRig->getJointVariableAttributeIndices( lod );
     std::map<std::uint32_t, bool> drivenJoints;
     for (auto a : varAttrs) drivenJoints[ a / 9 ] = true;
@@ -285,7 +297,11 @@ void RigLogicBodyConstraint::SetupAllAnimationNodes()
     const char* p = DnaPath.AsString();
     const std::string want = p ? p : "";
     if ((!mRig || want != mLoadedDnaPath) && !LoadDna()) return;
-    BuildBindings();
+
+    const auto validLod = ResolveLod();
+    LodLevel = static_cast<int>( validLod );
+    mInst->setLOD( validLod );
+    BuildBindings( validLod );
     mLastEvalId = -1;
 }
 

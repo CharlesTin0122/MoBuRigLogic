@@ -14,6 +14,9 @@ int main()
     assert( ClampLod( 8, 8 ) == 7 );
     assert( ClampLod( 100, 8 ) == 7 );
     assert( ClampLod( 4, 0 ) == 0 );
+    assert( ClampLod( -100, 1 ) == 0 );
+    assert( ClampLod( 1, 1 ) == 0 );
+    assert( ClampLod( 65535, 8 ) == 7 );
 
     const std::vector<std::uint16_t> indices { 10, 11, 12 };
     const auto mappings = CollectBlendShapeMappings(

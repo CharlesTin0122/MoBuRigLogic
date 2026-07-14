@@ -97,7 +97,8 @@ private:
 
     bool LoadDna();
     void ReleaseDna();
-    bool BuildBindings();
+    std::uint16_t ResolveLod() const;
+    bool BuildBindings( std::uint16_t lod );
 
     dna::BinaryStreamReader* mReader = nullptr;
     trio::FileStream*        mStream = nullptr;

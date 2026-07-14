@@ -1,0 +1,7 @@
+OpenRigLogic version: 13.2.5
+Source branch: 5.8
+Source commit: 7bd4c65
+Platform: Windows x64
+Configuration: Release
+Runtime: /MD
+Static library SHA256: CED01C2D41090DB41D4194DC64A49FB9E1D75D8B3E7DE19945960BDA92CE7507

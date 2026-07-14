@@ -332,53 +332,57 @@ bool RigLogicHeadConstraint::BuildBindings( std::uint16_t lod )
         mJointOutputs.push_back( jo );
     }
 
-    // ---- 输出②：BS 通道 → LOD0 网格 shape 属性 ----
-    // 网格命名 <mesh>__<channel>，所有 LOD 共用 LOD0 前缀（实测）
-    FBModel* bsMesh = nullptr;
-    for (auto& kv : models)
+    // ---- 输出②：按 DNA mesh-channel mapping 创建独立 BlendShape 输出 ----
+    const auto mappingIndices =
+        mReader->getMeshBlendShapeChannelMappingIndicesForLOD( lod );
+    const auto mappings = moburiglogic::CollectBlendShapeMappings(
+        mappingIndices,
+        [this]( std::uint16_t mappingIndex ) {
+            const auto mapping =
+                mReader->getMeshBlendShapeChannelMapping( mappingIndex );
+            return moburiglogic::BlendShapeMappingRef {
+                mapping.meshIndex,
+                mapping.blendShapeChannelIndex
+            };
+        } );
+
+    std::size_t mappingOrdinal = 0;
+    for (const auto& mapping : mappings)
     {
-        if (kv.first.find( "LOD0" ) == std::string::npos) continue;
-        FBModel* m = kv.second;
-        // 找一个带 shape 属性的 LOD0 网格（用首个 BS 通道名探测）
-        if (mReader->getBlendShapeChannelCount() > 0)
-        {
-            auto ch0 = mReader->getBlendShapeChannelName( 0 );
-            std::string probe;
-            for (std::uint16_t mi = 0; mi < mReader->getMeshCount(); ++mi)
-            {
-                auto ms = mReader->getMeshName( mi );
-                probe = std::string( ms.data(), ms.size() ) + "__" + std::string( ch0.data(), ch0.size() );
-                if (m->PropertyList.Find( probe.c_str() )) { bsMesh = m; break; }
-            }
+        auto meshNameView = mReader->getMeshName( mapping.meshIndex );
+        const std::string meshName( meshNameView.data(), meshNameView.size() );
+        auto modelIt = models.find( meshName );
+        if (modelIt == models.end()) {
+            ++mappingOrdinal;
+            continue;
         }
-        if (bsMesh) break;
+
+        auto channelNameView =
+            mReader->getBlendShapeChannelName( mapping.channelIndex );
+        const std::string channelName(
+            channelNameView.data(), channelNameView.size() );
+        const std::string propertyName = meshName + "__" + channelName;
+        FBProperty* property =
+            modelIt->second->PropertyList.Find( propertyName.c_str() );
+        if (!property || !property->IsAnimatable()) {
+            ++mappingOrdinal;
+            continue;
+        }
+
+        const auto userId = static_cast<int>( 6000u + mappingOrdinal );
+        FBAnimationNode* node = AnimationNodeInCreate( userId, property );
+        if (node) {
+            mBsOutputs.push_back( { node, mapping.channelIndex } );
+        }
+        ++mappingOrdinal;
     }
-    if (bsMesh)
-    {
-        std::vector<std::string> prefixes;
-        for (std::uint16_t mi = 0; mi < mReader->getMeshCount(); ++mi)
-        {
-            auto ms = mReader->getMeshName( mi );
-            prefixes.push_back( std::string( ms.data(), ms.size() ) + "__" );
-        }
-        auto bsChannels = mRig->getBlendShapeChannelIndicesForLOD( lod );
-        for (auto ci : bsChannels)
-        {
-            auto cs = mReader->getBlendShapeChannelName( ci );
-            const std::string ch( cs.data(), cs.size() );
-            for (const auto& pre : prefixes)
-            {
-                FBProperty* p = bsMesh->PropertyList.Find( (pre + ch).c_str() );
-                if (p && p->IsAnimatable())
-                {
-                    FBAnimationNode* node = AnimationNodeInCreate( 6000 + ci, p );
-                    if (node)
-                        mBsOutputs.push_back( { node, ci } );
-                    break;
-                }
-            }
-        }
-    }
+
+    const auto requestedMappings = mappings.size();
+    const auto boundMappings = mBsOutputs.size();
+    FBTrace( "[RigLogicHead] BlendShape mappings: requested=%zu bound=%zu missing=%zu\n",
+             requestedMappings,
+             boundMappings,
+             requestedMappings - boundMappings );
 
     mBindingsReady = ( !mExprInputs.empty() || !mGuiInputs.empty() )
                   && !mJointOutputs.empty();

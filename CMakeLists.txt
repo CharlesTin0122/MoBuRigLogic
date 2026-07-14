@@ -51,3 +51,11 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
 
 # MSVC: MoBu SDK 要求 MD 运行时
 target_compile_options(${PROJECT_NAME} PRIVATE /MD /EHsc /bigobj /utf-8)
+
+include(CTest)
+if(BUILD_TESTING)
+    add_executable(moburiglogic_unit_tests tests/riglogic_common_tests.cpp)
+    target_include_directories(moburiglogic_unit_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    target_compile_features(moburiglogic_unit_tests PRIVATE cxx_std_17)
+    add_test(NAME moburiglogic_unit_tests COMMAND moburiglogic_unit_tests)
+endif()

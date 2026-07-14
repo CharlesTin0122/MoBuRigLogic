@@ -5,7 +5,8 @@ MoBuRigLogic 是面向 **Autodesk MotionBuilder 2024** 的 Windows x64 C++ 插�
 本项目主要面向使用 MetaHuman DNA 的绑定技术美术，以及维护 MotionBuilder C++ 插件的开发者。
 
 > [!IMPORTANT]
-> 当前版本只支持 **MotionBuilder 2024**。不支持 MotionBuilder 2019，也不支持 MotionBuilder 2022、2023、2025 或 2026。
+> 当前版本只支持 **MotionBuilder 2024**。不支持 MotionBuilder 2022、2023、2025 或 2026。
+> MotionBuilder 2019 用户请使用 [`mobu2019` 分支](../../tree/mobu2019)（相同源码，仅构建目标不同，已在 MotionBuilder 2019 中实测）。
 
 ## 支持范围
 

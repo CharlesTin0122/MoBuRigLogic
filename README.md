@@ -127,7 +127,6 @@ MoBuRigLogic\
 │  └─ riglogic_common.h               # 公共 LOD、BlendShape 和输出路由逻辑
 ├─ tests\                             # C++ 单元测试和源码回归检查
 ├─ third_party\OpenRigLogic\         # 内置 OpenRigLogic 头文件、静态库和许可证
-├─ docs\                              # 设计说明和实施计划
 └─ build\                             # CMake 构建输出
 ```
 

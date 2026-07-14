@@ -12,3 +12,5 @@
 *.suo
 CMakeUserPresets.json
 
+# 内部开发过程文档（不发布）
+/docs/superpowers/

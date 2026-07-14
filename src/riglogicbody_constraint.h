@@ -19,9 +19,12 @@
 //--- SDK include
 #include <fbsdk/fbsdk.h>
 
+#include "riglogic_common.h"
+
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #define RIGLOGICBODY__CLASSNAME  RigLogicBodyConstraint
@@ -97,6 +100,7 @@ private:
 
     std::vector<InputBinding>  mInputs;
     std::vector<OutputBinding> mOutputs;
+    std::unordered_map<FBAnimationNode*, moburiglogic::OutputRoute> mOutputRoutes;
 
     int  mGroupSkeleton = -1;         // Reference Group: 骨架根（挂 pelvis/root 均可）
     long mLastEvalId    = -1;         // 每求值ID只求解一次（多输出节点共享结果）

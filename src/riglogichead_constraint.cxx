@@ -196,6 +196,7 @@ bool RigLogicHeadConstraint::BuildBindings( std::uint16_t lod )
     mNeckInputs.clear();
     mJointOutputs.clear();
     mBsOutputs.clear();
+    mOutputRoutes.clear();
     mBindingsReady = false;
 
     FBModel* skelRoot = (FBModel*)ReferenceGet( mGroupSkeleton, 0 );
@@ -330,6 +331,17 @@ bool RigLogicHeadConstraint::BuildBindings( std::uint16_t lod )
         jo.nodeR = AnimationNodeInCreate( 3000 + j*3 + 1, m, ANIMATIONNODE_TYPE_LOCAL_ROTATION );
         jo.nodeS = nullptr;   // head.dna 无缩放输出（实测 s:0）
         mJointOutputs.push_back( jo );
+        const auto bindingIndex =
+            static_cast<std::uint32_t>( mJointOutputs.size() - 1u );
+        if (jo.nodeT) mOutputRoutes.emplace(
+            jo.nodeT, moburiglogic::OutputRoute {
+                moburiglogic::OutputKind::JointTranslation, bindingIndex } );
+        if (jo.nodeR) mOutputRoutes.emplace(
+            jo.nodeR, moburiglogic::OutputRoute {
+                moburiglogic::OutputKind::JointRotation, bindingIndex } );
+        if (jo.nodeS) mOutputRoutes.emplace(
+            jo.nodeS, moburiglogic::OutputRoute {
+                moburiglogic::OutputKind::JointScaling, bindingIndex } );
     }
 
     // ---- 输出②：按 DNA mesh-channel mapping 创建独立 BlendShape 输出 ----
@@ -373,6 +385,11 @@ bool RigLogicHeadConstraint::BuildBindings( std::uint16_t lod )
         FBAnimationNode* node = AnimationNodeInCreate( userId, property );
         if (node) {
             mBsOutputs.push_back( { node, mapping.channelIndex } );
+            const auto bindingIndex =
+                static_cast<std::uint32_t>( mBsOutputs.size() - 1u );
+            mOutputRoutes.emplace(
+                node, moburiglogic::OutputRoute {
+                    moburiglogic::OutputKind::BlendShape, bindingIndex } );
         }
         ++mappingOrdinal;
     }
@@ -411,6 +428,7 @@ void RigLogicHeadConstraint::RemoveAllAnimationNodes()
     mNeckInputs.clear();
     mJointOutputs.clear();
     mBsOutputs.clear();
+    mOutputRoutes.clear();
     mBindingsReady = false;
 }
 
@@ -464,49 +482,77 @@ bool RigLogicHeadConstraint::AnimationNodeNotify( FBAnimationNode* pConnector,
         mLastEvalId = evalId;
     }
 
-    auto jo = mInst->getJointOutputs();
-    for (const auto& out : mJointOutputs)
+    const auto routeIt = mOutputRoutes.find( pConnector );
+    if (routeIt == mOutputRoutes.end()) return false;
+    const auto& route = routeIt->second;
+
+    if (route.kind == moburiglogic::OutputKind::BlendShape)
     {
-        const std::size_t b = static_cast<std::size_t>( out.jointIndex ) * 9;
-        if (b + 9 > jo.size()) continue;
-        if (pConnector == out.nodeT)
-        {
-            double v[3] = { out.neutralT[0] + jo[b+0], out.neutralT[1] + jo[b+1],
-                            out.neutralT[2] + jo[b+2] };
-            out.nodeT->WriteData( v, pEvaluateInfo );
-            return true;
-        }
-        if (pConnector == out.nodeR)
-        {
-            double v[3];
-            if (out.composeRot)
-            {
-                const double deltaE[3] = { jo[b+3], jo[b+4], jo[b+5] };
-                double qDelta[4], qFinal[4];
-                EulerDegToQuat( deltaE, qDelta );
-                QuatMul( out.qNeutral, qDelta, qFinal );
-                QuatToEulerDeg( qFinal, v );
-            }
-            else
-            {
-                v[0] = jo[b+3]; v[1] = jo[b+4]; v[2] = jo[b+5];
-            }
-            out.nodeR->WriteData( v, pEvaluateInfo );
-            return true;
-        }
+        if (route.bindingIndex >= mBsOutputs.size()) return false;
+        const auto& out = mBsOutputs[ route.bindingIndex ];
+        const auto bs = mInst->getBlendShapeOutputs();
+        double value = out.channel < bs.size() ? bs[ out.channel ] * 100.0 : 0.0;
+        out.node->WriteData( &value, pEvaluateInfo );
+        return true;
     }
 
-    auto bs = mInst->getBlendShapeOutputs();
-    for (const auto& out : mBsOutputs)
+    if (route.bindingIndex >= mJointOutputs.size()) return false;
+    const auto& out = mJointOutputs[ route.bindingIndex ];
+    const auto jointOutputs = mInst->getJointOutputs();
+    const std::size_t base = static_cast<std::size_t>( out.jointIndex ) * 9u;
+    if (base + 9u > jointOutputs.size()) return false;
+
+    switch (route.kind)
     {
-        if (pConnector == out.node)
-        {
-            double v = out.channel < bs.size() ? bs[ out.channel ] * 100.0 : 0.0;
-            out.node->WriteData( &v, pEvaluateInfo );
-            return true;
-        }
+    case moburiglogic::OutputKind::JointTranslation:
+    {
+        double value[3] = {
+            out.neutralT[0] + jointOutputs[base + 0u],
+            out.neutralT[1] + jointOutputs[base + 1u],
+            out.neutralT[2] + jointOutputs[base + 2u]
+        };
+        out.nodeT->WriteData( value, pEvaluateInfo );
+        return true;
     }
-    return true;
+    case moburiglogic::OutputKind::JointRotation:
+    {
+        double value[3];
+        if (out.composeRot)
+        {
+            const double deltaEuler[3] = {
+                jointOutputs[base + 3u],
+                jointOutputs[base + 4u],
+                jointOutputs[base + 5u]
+            };
+            double deltaQuat[4], finalQuat[4];
+            EulerDegToQuat( deltaEuler, deltaQuat );
+            QuatMul( out.qNeutral, deltaQuat, finalQuat );
+            QuatToEulerDeg( finalQuat, value );
+        }
+        else
+        {
+            value[0] = jointOutputs[base + 3u];
+            value[1] = jointOutputs[base + 4u];
+            value[2] = jointOutputs[base + 5u];
+        }
+        out.nodeR->WriteData( value, pEvaluateInfo );
+        return true;
+    }
+    case moburiglogic::OutputKind::JointScaling:
+    {
+        if (!out.nodeS) return false;
+        double value[3] = {
+            1.0 + jointOutputs[base + 6u],
+            1.0 + jointOutputs[base + 7u],
+            1.0 + jointOutputs[base + 8u]
+        };
+        out.nodeS->WriteData( value, pEvaluateInfo );
+        return true;
+    }
+    case moburiglogic::OutputKind::BlendShape:
+        break;
+    }
+    return false;
 }
 
 bool RigLogicHeadConstraint::FbxStore( FBFbxObject* pFbxObject, kFbxObjectStore pStoreWhat )

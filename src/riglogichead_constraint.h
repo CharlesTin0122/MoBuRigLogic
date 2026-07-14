@@ -14,8 +14,11 @@
 
 #include <fbsdk/fbsdk.h>
 
+#include "riglogic_common.h"
+
 #include <cstdint>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #define RIGLOGICHEAD__CLASSNAME  RigLogicHeadConstraint
@@ -111,6 +114,7 @@ private:
     std::vector<NeckInput>   mNeckInputs;
     std::vector<JointOutput> mJointOutputs;
     std::vector<BsOutput>    mBsOutputs;
+    std::unordered_map<FBAnimationNode*, moburiglogic::OutputRoute> mOutputRoutes;
 
     int  mGroupSkeleton = -1;
     long mLastEvalId    = -1;

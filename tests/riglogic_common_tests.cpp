@@ -32,8 +32,17 @@ int main()
     CHECK( mappings[1].channelIndex == 7 );
     CHECK( mappings[0].meshIndex != mappings[1].meshIndex );
 
-    const OutputRoute route { OutputKind::BlendShape, 42 };
-    CHECK( route.kind == OutputKind::BlendShape );
-    CHECK( route.bindingIndex == 42 );
+    const OutputRoute translation { OutputKind::JointTranslation, 11 };
+    const OutputRoute rotation { OutputKind::JointRotation, 22 };
+    const OutputRoute scaling { OutputKind::JointScaling, 33 };
+    const OutputRoute blendShape { OutputKind::BlendShape, 44 };
+    CHECK( translation.kind == OutputKind::JointTranslation );
+    CHECK( translation.bindingIndex == 11 );
+    CHECK( rotation.kind == OutputKind::JointRotation );
+    CHECK( rotation.bindingIndex == 22 );
+    CHECK( scaling.kind == OutputKind::JointScaling );
+    CHECK( scaling.bindingIndex == 33 );
+    CHECK( blendShape.kind == OutputKind::BlendShape );
+    CHECK( blendShape.bindingIndex == 44 );
     return 0;
 }

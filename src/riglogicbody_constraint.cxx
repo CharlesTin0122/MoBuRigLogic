@@ -196,6 +196,7 @@ bool RigLogicBodyConstraint::BuildBindings( std::uint16_t lod )
 {
     mInputs.clear();
     mOutputs.clear();
+    mOutputRoutes.clear();
     mBindingsReady = false;
 
     FBModel* skelRoot = (FBModel*)ReferenceGet( mGroupSkeleton, 0 );
@@ -281,6 +282,17 @@ bool RigLogicBodyConstraint::BuildBindings( std::uint16_t lod )
         ob.nodeR = AnimationNodeInCreate( 3000 + j * 3 + 1, m, ANIMATIONNODE_TYPE_LOCAL_ROTATION );
         ob.nodeS = AnimationNodeInCreate( 3000 + j * 3 + 2, m, ANIMATIONNODE_TYPE_LOCAL_SCALING );
         mOutputs.push_back( ob );
+        const auto bindingIndex =
+            static_cast<std::uint32_t>( mOutputs.size() - 1u );
+        if (ob.nodeT) mOutputRoutes.emplace(
+            ob.nodeT, moburiglogic::OutputRoute {
+                moburiglogic::OutputKind::JointTranslation, bindingIndex } );
+        if (ob.nodeR) mOutputRoutes.emplace(
+            ob.nodeR, moburiglogic::OutputRoute {
+                moburiglogic::OutputKind::JointRotation, bindingIndex } );
+        if (ob.nodeS) mOutputRoutes.emplace(
+            ob.nodeS, moburiglogic::OutputRoute {
+                moburiglogic::OutputKind::JointScaling, bindingIndex } );
     }
 
     mBindingsReady = !mInputs.empty() && !mOutputs.empty();
@@ -309,6 +321,7 @@ void RigLogicBodyConstraint::RemoveAllAnimationNodes()
 {
     mInputs.clear();
     mOutputs.clear();
+    mOutputRoutes.clear();
     mBindingsReady = false;
 }
 
@@ -346,33 +359,52 @@ bool RigLogicBodyConstraint::AnimationNodeNotify( FBAnimationNode* pConnector,
         mLastEvalId = evalId;
     }
 
-    // 写当前被通知的输出节点（逐节点通知，全部走同一份求解缓存）
-    auto jo = mInst->getJointOutputs();
-    for (const auto& ob : mOutputs)
-    {
-        const std::size_t b = static_cast<std::size_t>( ob.jointIndex ) * 9;
-        if (b + 9 > jo.size()) continue;
+    const auto routeIt = mOutputRoutes.find( pConnector );
+    if (routeIt == mOutputRoutes.end()) return false;
+    const auto& route = routeIt->second;
+    if (route.bindingIndex >= mOutputs.size()) return false;
 
-        if (pConnector == ob.nodeT)
-        {
-            double v[3] = { ob.neutralT[0] + jo[b+0], ob.neutralT[1] + jo[b+1], ob.neutralT[2] + jo[b+2] };
-            ob.nodeT->WriteData( v, pEvaluateInfo );
-            return true;
-        }
-        if (pConnector == ob.nodeR)
-        {
-            double v[3] = { jo[b+3], jo[b+4], jo[b+5] };
-            ob.nodeR->WriteData( v, pEvaluateInfo );
-            return true;
-        }
-        if (pConnector == ob.nodeS)
-        {
-            double v[3] = { 1.0 + jo[b+6], 1.0 + jo[b+7], 1.0 + jo[b+8] };
-            ob.nodeS->WriteData( v, pEvaluateInfo );
-            return true;
-        }
+    const auto& output = mOutputs[ route.bindingIndex ];
+    const auto jointOutputs = mInst->getJointOutputs();
+    const std::size_t base = static_cast<std::size_t>( output.jointIndex ) * 9u;
+    if (base + 9u > jointOutputs.size()) return false;
+
+    switch (route.kind)
+    {
+    case moburiglogic::OutputKind::JointTranslation:
+    {
+        double value[3] = {
+            output.neutralT[0] + jointOutputs[base + 0u],
+            output.neutralT[1] + jointOutputs[base + 1u],
+            output.neutralT[2] + jointOutputs[base + 2u]
+        };
+        output.nodeT->WriteData( value, pEvaluateInfo );
+        return true;
     }
-    return true;
+    case moburiglogic::OutputKind::JointRotation:
+    {
+        double value[3] = {
+            jointOutputs[base + 3u],
+            jointOutputs[base + 4u],
+            jointOutputs[base + 5u]
+        };
+        output.nodeR->WriteData( value, pEvaluateInfo );
+        return true;
+    }
+    case moburiglogic::OutputKind::JointScaling:
+    {
+        double value[3] = {
+            1.0 + jointOutputs[base + 6u],
+            1.0 + jointOutputs[base + 7u],
+            1.0 + jointOutputs[base + 8u]
+        };
+        output.nodeS->WriteData( value, pEvaluateInfo );
+        return true;
+    }
+    case moburiglogic::OutputKind::BlendShape:
+        return false;
+    }
+    return false;
 }
 
 /************************************************

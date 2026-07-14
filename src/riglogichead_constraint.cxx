@@ -358,24 +358,40 @@ bool RigLogicHeadConstraint::BuildBindings( std::uint16_t lod )
             };
         } );
 
+    std::map<std::uint16_t, FBModel*> blendShapeHosts;
     std::size_t mappingOrdinal = 0;
     for (const auto& mapping : mappings)
     {
         auto meshNameView = mReader->getMeshName( mapping.meshIndex );
         const std::string meshName( meshNameView.data(), meshNameView.size() );
-        auto modelIt = models.find( meshName );
-        if (modelIt == models.end()) {
-            ++mappingOrdinal;
-            continue;
-        }
-
         auto channelNameView =
             mReader->getBlendShapeChannelName( mapping.channelIndex );
         const std::string channelName(
             channelNameView.data(), channelNameView.size() );
         const std::string propertyName = meshName + "__" + channelName;
-        FBProperty* property =
-            modelIt->second->PropertyList.Find( propertyName.c_str() );
+
+        FBModel* propertyOwner = nullptr;
+        const auto cachedHost = blendShapeHosts.find( mapping.meshIndex );
+        if (cachedHost != blendShapeHosts.end()) {
+            propertyOwner = cachedHost->second;
+        } else {
+            propertyOwner = moburiglogic::FindBlendShapePropertyOwner(
+                models,
+                meshName,
+                propertyName,
+                []( FBModel* model, const std::string& candidateProperty ) {
+                    FBProperty* property =
+                        model->PropertyList.Find( candidateProperty.c_str() );
+                    return property && property->IsAnimatable();
+                } );
+            if (propertyOwner) {
+                blendShapeHosts.emplace( mapping.meshIndex, propertyOwner );
+            }
+        }
+
+        FBProperty* property = propertyOwner
+            ? propertyOwner->PropertyList.Find( propertyName.c_str() )
+            : nullptr;
         if (!property || !property->IsAnimatable()) {
             ++mappingOrdinal;
             continue;

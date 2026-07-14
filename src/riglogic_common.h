@@ -34,6 +34,27 @@ std::vector<BlendShapeMappingRef> CollectBlendShapeMappings(
     }
     return result;
 }
+template <typename Owners, typename OwnerName, typename PropertyName,
+          typename HasProperty>
+typename Owners::mapped_type FindBlendShapePropertyOwner(
+    const Owners& owners,
+    const OwnerName& preferredOwnerName,
+    const PropertyName& propertyName,
+    HasProperty&& hasProperty )
+{
+    const auto preferred = owners.find( preferredOwnerName );
+    if (preferred != owners.end() &&
+        hasProperty( preferred->second, propertyName )) {
+        return preferred->second;
+    }
+
+    for (const auto& owner : owners) {
+        if (hasProperty( owner.second, propertyName )) {
+            return owner.second;
+        }
+    }
+    return typename Owners::mapped_type {};
+}
 
 enum class OutputKind : std::uint8_t {
     JointTranslation,

@@ -1,6 +1,8 @@
 #include "riglogic_common.h"
 
 #include <cstdint>
+#include <map>
+#include <string>
 #include <vector>
 
 #define CHECK(expression) do { if (!(expression)) return __LINE__; } while (false)
@@ -32,6 +34,18 @@ int main()
     CHECK( mappings[1].channelIndex == 7 );
     CHECK( mappings[0].meshIndex != mappings[1].meshIndex );
 
+    const std::map<std::string, int> hostModels {
+        { "SKM_H10100_FaceMesh_LOD0", 10 },
+        { "SKM_H10100_FaceMesh_LOD1", 11 }
+    };
+    const auto fallbackOwner = FindBlendShapePropertyOwner(
+        hostModels,
+        std::string( "head_lod0_mesh" ),
+        std::string( "head_lod0_mesh__brow_down_L" ),
+        []( int host, const std::string& propertyName ) {
+            return host == 10 && propertyName == "head_lod0_mesh__brow_down_L";
+        } );
+    CHECK( fallbackOwner == 10 );
     const OutputRoute translation { OutputKind::JointTranslation, 11 };
     const OutputRoute rotation { OutputKind::JointRotation, 22 };
     const OutputRoute scaling { OutputKind::JointScaling, 33 };

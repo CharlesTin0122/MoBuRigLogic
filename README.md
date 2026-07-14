@@ -432,6 +432,10 @@ cmake -S . -B build_fresh `
 - 修改约束绑定或求值逻辑后，应同时运行 C++ 单元测试和源码回归测试。
 - 部署测试应在关闭 MotionBuilder 后手动更新 DLL。
 
+## 项目许可证
+
+MoBuRigLogic 项目自身源码采用 [MIT License](LICENSE)。OpenRigLogic 等第三方组件仍遵循各自的许可证，项目的 MIT License 不会替代或覆盖第三方许可证。
+
 ## 第三方组件与许可证
 
 OpenRigLogic 版本和构建信息见：

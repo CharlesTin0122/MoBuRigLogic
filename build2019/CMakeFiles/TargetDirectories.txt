@@ -1,3 +1,0 @@
-D:/Code/MoBuRigLogic/build2019/CMakeFiles/moburiglogic.dir
-D:/Code/MoBuRigLogic/build2019/CMakeFiles/ALL_BUILD.dir
-D:/Code/MoBuRigLogic/build2019/CMakeFiles/ZERO_CHECK.dir

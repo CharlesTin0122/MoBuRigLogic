@@ -1,2 +1,14 @@
+# Codex 临时工作树
 .worktrees/
+
+# CMake、Visual Studio 与本地构建输出
+/build*/
+/cmake-build-*/
+/out/
+/.vs/
+
+# Visual Studio 用户级文件
+*.user
+*.suo
+CMakeUserPresets.json
 

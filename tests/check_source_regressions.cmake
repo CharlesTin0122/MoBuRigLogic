@@ -26,6 +26,21 @@ assert_contains("${cmake_content}" "PRODUCT_VERSION=2024" "MotionBuilder 2024 pr
 assert_not_contains("${cmake_content}" "set(MOBU_VERSION" "multi-version CMake option")
 assert_not_contains("${cmake_content}" "MotionBuilder 2019" "MotionBuilder 2019 support")
 
+assert_contains("${cmake_content}" [=[${CMAKE_CURRENT_SOURCE_DIR}/third_party/OpenRigLogic]=]
+                "vendored OpenRigLogic root")
+assert_contains("${cmake_content}" [=[include/riglogic/RigLogic.h]=]
+                "OpenRigLogic header sentinel check")
+assert_contains("${cmake_content}" [=[lib/win64/Release/riglogic413_2_5.lib]=]
+                "vendored OpenRigLogic static library")
+assert_contains("${cmake_content}" [=[message(FATAL_ERROR]=]
+                "configuration-time dependency failure")
+assert_not_contains("${cmake_content}" "D:/Code/OpenRigLogic"
+                    "external OpenRigLogic repository")
+assert_not_contains("${cmake_content}" [=[CACHE PATH "OpenRigLogic repository"]=]
+                    "OpenRigLogic root cache override")
+assert_not_contains("${cmake_content}" [=[CACHE FILEPATH "RigLogic static library"]=]
+                    "OpenRigLogic library cache override")
+
 assert_contains("${layout_content}" [=[kFBAttachBottom, "LabelDna"]=] "DNA layout anchor")
 assert_contains("${layout_content}" [=[kFBAttachBottom, "LabelMode"]=] "mode layout anchor")
 assert_contains("${head_content}" "RigLogicHeadConstraint::RebuildBindings()" "Head safe rebuild")

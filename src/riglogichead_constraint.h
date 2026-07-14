@@ -67,6 +67,7 @@ public:
     size_t JointOutCount() const { return mJointOutputs.size(); }
     size_t BsCount()       const { return mBsOutputs.size(); }
     bool   DnaLoaded()     const { return mRig != nullptr; }
+    bool   RebuildBindings();
     void   ZeroAllExpressions();   //!< 全部表情属性归零（表情属性模式用）
 
 private:

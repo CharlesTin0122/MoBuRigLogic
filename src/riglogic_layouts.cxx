@@ -160,10 +160,11 @@ void RigLogicHeadLayout::RefreshStatus()
 
 void RigLogicHeadLayout::RebuildBindings()
 {
-    // Active 关→开 触发 RemoveAllAnimationNodes/SetupAllAnimationNodes
-    mConstraint->Active = false;
-    mConstraint->Active = true;
-    FBSystem().Scene->Evaluate();
+    const bool rebuilt = mConstraint->RebuildBindings();
+    if (!rebuilt)
+    {
+        FBTrace( "[RigLogic] RebuildBindings failed\n" );
+    }
     RefreshStatus();
 }
 
@@ -331,8 +332,10 @@ void RigLogicBodyLayout::EventBrowse( HISender, HKEvent )
 void RigLogicBodyLayout::EventRebuild( HISender, HKEvent )
 {
     mConstraint->DnaPath = mEditDnaPath.Text.AsString();
-    mConstraint->Active = false;
-    mConstraint->Active = true;
-    FBSystem().Scene->Evaluate();
+    const bool rebuilt = mConstraint->RebuildBindings();
+    if (!rebuilt)
+    {
+        FBTrace( "[RigLogic] RebuildBindings failed\n" );
+    }
     RefreshStatus();
 }

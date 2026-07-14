@@ -71,6 +71,7 @@ public:
     size_t InputCount()    const { return mInputs.size(); }
     size_t OutputCount()   const { return mOutputs.size(); }
     bool   DnaLoaded()     const { return mRig != nullptr; }
+    bool   RebuildBindings();
 
 private:
     struct InputBinding {

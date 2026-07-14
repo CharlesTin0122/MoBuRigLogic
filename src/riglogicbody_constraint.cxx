@@ -317,11 +317,34 @@ void RigLogicBodyConstraint::SetupAllAnimationNodes()
     mLastEvalId = -1;
 }
 
+bool RigLogicBodyConstraint::RebuildBindings()
+{
+    FBModel* root = static_cast<FBModel*>( ReferenceGet( mGroupSkeleton, 0 ) );
+    if (!root) return false;
+
+    const bool wasActive = static_cast<bool>( Active );
+    Active = false;
+
+    if (!ReferenceRemove( mGroupSkeleton, root ))
+    {
+        Active = wasActive;
+        return false;
+    }
+    if (!ReferenceAdd( mGroupSkeleton, root ))
+    {
+        return false;
+    }
+
+    if (wasActive && mBindingsReady) Active = true;
+    return mBindingsReady;
+}
+
 void RigLogicBodyConstraint::RemoveAllAnimationNodes()
 {
     mInputs.clear();
     mOutputs.clear();
     mOutputRoutes.clear();
+    mLastEvalId = -1;
     mBindingsReady = false;
 }
 

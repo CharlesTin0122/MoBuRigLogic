@@ -1,9 +1,9 @@
 cmake_minimum_required(VERSION 3.20)
 project(moburiglogic LANGUAGES CXX)
 
-# ------------------------------------------------------------------ MotionBuilder 2024 paths
-set(MOBU_ROOT "C:/Program Files/Autodesk/MotionBuilder 2024"
-    CACHE PATH "MotionBuilder 2024 installation directory")
+# ------------------------------------------------------------------ MotionBuilder 2019 paths
+set(MOBU_ROOT "C:/Program Files/Autodesk/MotionBuilder 2019"
+    CACHE PATH "MotionBuilder 2019 installation directory")
 set(ORL_ROOT
     "${CMAKE_CURRENT_SOURCE_DIR}/third_party/OpenRigLogic")
 set(ORL_INCLUDE_DIR
@@ -49,7 +49,7 @@ add_library(${PROJECT_NAME} SHARED
 set_target_properties(${PROJECT_NAME} PROPERTIES
     CXX_STANDARD 17
     CXX_STANDARD_REQUIRED ON
-    OUTPUT_NAME "moburiglogic_2024"
+    OUTPUT_NAME "moburiglogic_2019"
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE
@@ -67,7 +67,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
 target_compile_definitions(${PROJECT_NAME} PRIVATE
     KARCH_ENV_WIN=1
     KARCH_ENV_MSC=1
-    PRODUCT_VERSION=2024
+    PRODUCT_VERSION=2019
     _CRT_SECURE_NO_WARNINGS
     NOMINMAX
 )

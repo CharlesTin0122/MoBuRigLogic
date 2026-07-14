@@ -1,24 +1,25 @@
 # MoBuRigLogic
 
-MoBuRigLogic 是面向 **Autodesk MotionBuilder 2024** 的 Windows x64 C++ 插件。插件在 MotionBuilder 求值图中调用 Epic Games OpenRigLogic，根据 MetaHuman DNA 计算头部表情和身体修形，并将结果写入对应的骨骼与 BlendShape 属性。
+MoBuRigLogic 是面向 **Autodesk MotionBuilder 2019** 的 Windows x64 C++ 插件。插件在 MotionBuilder 求值图中调用 Epic Games OpenRigLogic，根据 MetaHuman DNA 计算头部表情和身体修形，并将结果写入对应的骨骼与 BlendShape 属性。
 
 本项目主要面向使用 MetaHuman DNA 的绑定技术美术，以及维护 MotionBuilder C++ 插件的开发者。
 
 > [!IMPORTANT]
-> 当前版本只支持 **MotionBuilder 2024**。不支持 MotionBuilder 2019，也不支持 MotionBuilder 2022、2023、2025 或 2026。
+> 当前分支（`mobu2019`）只支持 **MotionBuilder 2019**。不支持 MotionBuilder 2022、2023、2025 或 2026；MotionBuilder 2024 请使用 `main` 分支。
 
 ## 支持范围
 
 | 项目 | 当前支持 |
 | --- | --- |
 | 操作系统 | Windows x64 |
-| MotionBuilder | 2024 |
+| MotionBuilder | 2019 |
 | C++ 标准 | C++17 |
 | 编译器 | MSVC / Visual Studio 2022 C++ 工具链 |
 | MSVC Runtime | `/MD` |
+| VC++ 运行库 | 目标机器需安装 Microsoft Visual C++ 2015-2022 Redistributable (x64) |
 | OpenRigLogic | OpenRigLogic 13.2.5，项目内置 Release 静态库 |
 | 构建系统 | CMake 3.20 或更高版本 |
-| 输出插件 | `build/Release/moburiglogic_2024.dll` |
+| 输出插件 | `build/Release/moburiglogic_2019.dll` |
 
 ## 功能概览
 
@@ -56,22 +57,25 @@ C++ 类型：`RigLogicBodyConstraint`
 
 编译前需要安装：
 
-1. Autodesk MotionBuilder 2024。
-2. MotionBuilder 2024 OpenReality SDK。
+1. Autodesk MotionBuilder 2019。
+2. MotionBuilder 2019 OpenReality SDK。
 3. Visual Studio 2022，并安装“使用 C++ 的桌面开发”工具。
 4. CMake 3.20 或更高版本。
 5. Git（仅源码管理需要）。
 
+> [!NOTE]
+> MotionBuilder 2019 官方配套编译器为 Visual Studio 2015 (v140)，不支持本项目要求的 C++17。本分支使用 Visual Studio 2022 编译（MSVC v140–v143 二进制 ABI 兼容），已实测可用，但不是 Autodesk 官方支持的工具链组合。插件依赖 `VCRUNTIME140_1.dll`，MotionBuilder 2019 自带的 VC++ 2015 运行库不包含该文件，部署机器必须安装 Microsoft Visual C++ 2015-2022 Redistributable (x64)。
+
 默认 MotionBuilder 安装目录为：
 
 ```text
-C:\Program Files\Autodesk\MotionBuilder 2024
+C:\Program Files\Autodesk\MotionBuilder 2019
 ```
 
 CMake 会从以下位置读取 OpenReality SDK：
 
 ```text
-C:\Program Files\Autodesk\MotionBuilder 2024\OpenRealitySDK
+C:\Program Files\Autodesk\MotionBuilder 2019\OpenRealitySDK
 ```
 
 其中必须包含：
@@ -118,7 +122,7 @@ D:\Code\OpenRigLogic
 
 ```text
 MoBuRigLogic\
-├─ CMakeLists.txt                     # MotionBuilder 2024 构建配置
+├─ CMakeLists.txt                     # MotionBuilder 2019 构建配置
 ├─ src\                               # 约束、Layout 和公共求值逻辑
 │  ├─ library.cxx                     # MotionBuilder 插件入口
 │  ├─ riglogichead_constraint.*       # 头部表情约束
@@ -142,7 +146,7 @@ cd D:\Code\MoBuRigLogic
 
 ```powershell
 cmake -S . -B build `
-  -DMOBU_ROOT="C:/Program Files/Autodesk/MotionBuilder 2024" `
+  -DMOBU_ROOT="C:/Program Files/Autodesk/MotionBuilder 2019" `
   -DBUILD_TESTING=ON
 ```
 
@@ -157,17 +161,17 @@ cmake --build build --config Release --clean-first
 成功后会生成：
 
 ```text
-D:\Code\MoBuRigLogic\build\Release\moburiglogic_2024.dll
+D:\Code\MoBuRigLogic\build\Release\moburiglogic_2019.dll
 ```
 
 这里的绝对路径对应当前工作区。如果仓库位于其他目录，输出仍然位于该仓库的：
 
 ```text
-build\Release\moburiglogic_2024.dll
+build\Release\moburiglogic_2019.dll
 ```
 
 > [!NOTE]
-> 插件使用 MotionBuilder 2024 SDK 和 `/MD` Runtime。不要将其他 MotionBuilder 版本的 SDK、头文件或 `fbsdk.lib` 混入当前构建目录。
+> 插件使用 MotionBuilder 2019 SDK 和 `/MD` Runtime。不要将其他 MotionBuilder 版本的 SDK、头文件或 `fbsdk.lib` 混入当前构建目录。
 
 ## 运行测试
 
@@ -182,7 +186,7 @@ ctest --test-dir build -C Release --output-on-failure
 | 测试 | 作用 |
 | --- | --- |
 | `moburiglogic_unit_tests` | 验证公共 LOD、BlendShape mapping 和属性宿主解析逻辑 |
-| `moburiglogic_source_regressions` | 检查关键源码回归、MotionBuilder 2024 配置和 vendored OpenRigLogic 路径 |
+| `moburiglogic_source_regressions` | 检查关键源码回归、MotionBuilder 2019 配置和 vendored OpenRigLogic 路径 |
 
 预期结果：
 
@@ -194,21 +198,21 @@ ctest --test-dir build -C Release --output-on-failure
 
 ### 安装或更新
 
-1. 完全关闭 MotionBuilder 2024。
+1. 完全关闭 MotionBuilder 2019。
 2. 编译 Release 配置。
 3. 复制：
 
    ```text
-   D:\Code\MoBuRigLogic\build\Release\moburiglogic_2024.dll
+   D:\Code\MoBuRigLogic\build\Release\moburiglogic_2019.dll
    ```
 
 4. 粘贴到：
 
    ```text
-   C:\Program Files\Autodesk\MotionBuilder 2024\bin\x64\plugins
+   C:\Program Files\Autodesk\MotionBuilder 2019\bin\x64\plugins
    ```
 
-5. 启动 MotionBuilder 2024。
+5. 启动 MotionBuilder 2019。
 6. 在约束列表中检查以下约束是否出现：
    - `RigLogic Head Expression`
    - `RigLogic Body Corrective`
@@ -217,11 +221,11 @@ ctest --test-dir build -C Release --output-on-failure
 
 ### 卸载
 
-1. 关闭 MotionBuilder 2024。
+1. 关闭 MotionBuilder 2019。
 2. 从插件目录删除：
 
    ```text
-   moburiglogic_2024.dll
+   moburiglogic_2019.dll
    ```
 
 ## MotionBuilder 使用流程
@@ -338,15 +342,15 @@ DNA joint name:          head
 
 检查：
 
-- DLL 是否位于 MotionBuilder 2024 的 `bin\x64\plugins`。
-- 文件名是否为 `moburiglogic_2024.dll`。
+- DLL 是否位于 MotionBuilder 2019 的 `bin\x64\plugins`。
+- 文件名是否为 `moburiglogic_2019.dll`。
 - 是否在复制 DLL 前关闭了 MotionBuilder。
-- DLL 是否确实使用 MotionBuilder 2024 SDK 和 Windows x64 Release 配置编译。
+- DLL 是否确实使用 MotionBuilder 2019 SDK 和 Windows x64 Release 配置编译。
 - MotionBuilder 启动日志中是否存在插件加载或依赖错误。
 
 ### DLL 无法覆盖或删除
 
-MotionBuilder 加载插件后会占用 DLL。先关闭所有 MotionBuilder 2024 进程，再更新或删除插件。
+MotionBuilder 加载插件后会占用 DLL。先关闭所有 MotionBuilder 2019 进程，再更新或删除插件。
 
 ### DNA 加载失败
 
@@ -392,7 +396,7 @@ BlendShape 仅由头部约束输出。检查：
 
 ### CMake 找不到 fbsdk.lib
 
-确认 `MOBU_ROOT` 指向 MotionBuilder 2024 安装目录，并检查：
+确认 `MOBU_ROOT` 指向 MotionBuilder 2019 安装目录，并检查：
 
 ```text
 <MOBU_ROOT>\OpenRealitySDK\lib\x64\fbsdk.lib
@@ -418,13 +422,13 @@ third_party\OpenRigLogic\LICENSE
 
 ```powershell
 cmake -S . -B build_fresh `
-  -DMOBU_ROOT="C:/Program Files/Autodesk/MotionBuilder 2024" `
+  -DMOBU_ROOT="C:/Program Files/Autodesk/MotionBuilder 2019" `
   -DBUILD_TESTING=ON
 ```
 
 ## 开发与维护注意事项
 
-- 当前 CMake 配置固定输出 `moburiglogic_2024.dll`。
+- 当前 CMake 配置固定输出 `moburiglogic_2019.dll`。
 - 不要把 MotionBuilder 2019 或其他版本的 SDK 路径重新加入当前构建。
 - 更新 OpenRigLogic 静态库时，必须同步更新公开头文件、`VERSION.txt`、许可证和 SHA256。
 - 预编译 OpenRigLogic 静态库必须与 Windows x64、Release 和 `/MD` 配置兼容。

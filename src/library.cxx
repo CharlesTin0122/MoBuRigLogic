@@ -1,5 +1,5 @@
 /**
- * 插件库入口 —— MotionBuilder 2024 加载点
+ * 插件库入口 —— MotionBuilder 2019 加载点
  */
 #include <fbsdk/fbsdk.h>
 

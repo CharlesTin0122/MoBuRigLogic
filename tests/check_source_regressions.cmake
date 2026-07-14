@@ -21,10 +21,10 @@ function(assert_not_contains content needle label)
     endif()
 endfunction()
 
-assert_contains("${cmake_content}" [=[OUTPUT_NAME "moburiglogic_2024"]=] "fixed plugin output name")
-assert_contains("${cmake_content}" "PRODUCT_VERSION=2024" "MotionBuilder 2024 product definition")
+assert_contains("${cmake_content}" [=[OUTPUT_NAME "moburiglogic_2019"]=] "fixed plugin output name")
+assert_contains("${cmake_content}" "PRODUCT_VERSION=2019" "MotionBuilder 2019 product definition")
 assert_not_contains("${cmake_content}" "set(MOBU_VERSION" "multi-version CMake option")
-assert_not_contains("${cmake_content}" "MotionBuilder 2019" "MotionBuilder 2019 support")
+assert_not_contains("${cmake_content}" "MotionBuilder 2024" "MotionBuilder 2024 support")
 
 assert_contains("${cmake_content}" [=[${CMAKE_CURRENT_SOURCE_DIR}/third_party/OpenRigLogic]=]
                 "vendored OpenRigLogic root")

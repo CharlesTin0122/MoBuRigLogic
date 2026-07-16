@@ -1,6 +1,6 @@
 # MoBuRigLogic
 
-MoBuRigLogic 是面向 **Autodesk MotionBuilder 2019** 的 Windows x64 C++ 插件。插件在 MotionBuilder 求值图中调用 Epic Games OpenRigLogic，根据 MetaHuman DNA 计算头部表情和身体修形，并将结果写入对应的骨骼与 BlendShape 属性。
+MoBuRigLogic 是面向 **Autodesk MotionBuilder 2019** 的 Windows x64 C++ 插件。插件在 MotionBuilder 求值图中调用  [Epic Games OpenRigLogic](https://github.com/EpicGames/OpenRigLogic)，根据 MetaHuman DNA 计算头部表情和身体修形，并将结果写入对应的骨骼与 BlendShape 属性。
 
 本项目主要面向使用 MetaHuman DNA 的绑定技术美术，以及维护 MotionBuilder C++ 插件的开发者。
 

@@ -1,6 +1,6 @@
 # MoBuRigLogic
 
-MoBuRigLogic 是面向 **Autodesk MotionBuilder 2024** 的 Windows x64 C++ 插件。插件在 MotionBuilder 求值图中调用 Epic Games OpenRigLogic，根据 MetaHuman DNA 计算头部表情和身体修形，并将结果写入对应的骨骼与 BlendShape 属性。
+MoBuRigLogic 是面向 **Autodesk MotionBuilder 2024** 的 Windows x64 C++ 插件。插件在 MotionBuilder 求值图中调用 [Epic Games OpenRigLogic](https://github.com/EpicGames/OpenRigLogic)，根据 MetaHuman DNA 计算头部表情和身体修形，并将结果写入对应的骨骼与 BlendShape 属性。
 
 本项目主要面向使用 MetaHuman DNA 的绑定技术美术，以及维护 MotionBuilder C++ 插件的开发者。
 
@@ -10,16 +10,16 @@ MoBuRigLogic 是面向 **Autodesk MotionBuilder 2024** 的 Windows x64 C++ 插�
 
 ## 支持范围
 
-| 项目 | 当前支持 |
-| --- | --- |
-| 操作系统 | Windows x64 |
-| MotionBuilder | 2024 |
-| C++ 标准 | C++17 |
-| 编译器 | MSVC / Visual Studio 2022 C++ 工具链 |
-| MSVC Runtime | `/MD` |
-| OpenRigLogic | OpenRigLogic 13.2.5，项目内置 Release 静态库 |
-| 构建系统 | CMake 3.20 或更高版本 |
-| 输出插件 | `build/Release/moburiglogic_2024.dll` |
+| 项目          | 当前支持                                     |
+| ------------- | -------------------------------------------- |
+| 操作系统      | Windows x64                                  |
+| MotionBuilder | 2024                                         |
+| C++ 标准      | C++17                                        |
+| 编译器        | MSVC / Visual Studio 2022 C++ 工具链         |
+| MSVC Runtime  | `/MD`                                        |
+| OpenRigLogic  | OpenRigLogic 13.2.5，项目内置 Release 静态库 |
+| 构建系统      | CMake 3.20 或更高版本                        |
+| 输出插件      | `build/Release/moburiglogic_2024.dll`        |
 
 ## 功能概览
 
@@ -102,16 +102,16 @@ D:\Code\OpenRigLogic
 
 内置依赖信息：
 
-| 项目 | 值 |
-| --- | --- |
-| OpenRigLogic 版本 | 13.2.5 |
-| 上游分支 | 5.8 |
-| 上游提交 | `7bd4c65` |
-| 平台 | Windows x64 |
-| 配置 | Release |
-| Runtime | `/MD` |
-| 静态库 | `riglogic413_2_5.lib` |
-| SHA256 | `CED01C2D41090DB41D4194DC64A49FB9E1D75D8B3E7DE19945960BDA92CE7507` |
+| 项目              | 值                                                                 |
+| ----------------- | ------------------------------------------------------------------ |
+| OpenRigLogic 版本 | 13.2.5                                                             |
+| 上游分支          | 5.8                                                                |
+| 上游提交          | `7bd4c65`                                                          |
+| 平台              | Windows x64                                                        |
+| 配置              | Release                                                            |
+| Runtime           | `/MD`                                                              |
+| 静态库            | `riglogic413_2_5.lib`                                              |
+| SHA256            | `CED01C2D41090DB41D4194DC64A49FB9E1D75D8B3E7DE19945960BDA92CE7507` |
 
 静态库会直接链接进插件。部署到 MotionBuilder 时不需要复制 `.lib` 和 OpenRigLogic 头文件。
 
@@ -180,9 +180,9 @@ ctest --test-dir build -C Release --output-on-failure
 
 当前测试包括：
 
-| 测试 | 作用 |
-| --- | --- |
-| `moburiglogic_unit_tests` | 验证公共 LOD、BlendShape mapping 和属性宿主解析逻辑 |
+| 测试                              | 作用                                                                   |
+| --------------------------------- | ---------------------------------------------------------------------- |
+| `moburiglogic_unit_tests`         | 验证公共 LOD、BlendShape mapping 和属性宿主解析逻辑                    |
 | `moburiglogic_source_regressions` | 检查关键源码回归、MotionBuilder 2024 配置和 vendored OpenRigLogic 路径 |
 
 预期结果：
@@ -267,16 +267,16 @@ ctest --test-dir build -C Release --output-on-failure
 
 ### 共同属性
 
-| 属性 | 说明 |
-| --- | --- |
-| `DNA Path` / `DnaPath` | 当前约束使用的 DNA 文件路径 |
-| `LOD Level` / `LodLevel` | RigLogic 求值和输出绑定使用的 LOD；超出范围时会限制到 DNA 的有效范围 |
-| `Last Solve Ms` / `LastSolveMs` | 上一次完整 RigLogic 求解耗时，单位为毫秒，只读 |
+| 属性                            | 说明                                                                 |
+| ------------------------------- | -------------------------------------------------------------------- |
+| `DNA Path` / `DnaPath`          | 当前约束使用的 DNA 文件路径                                          |
+| `LOD Level` / `LodLevel`        | RigLogic 求值和输出绑定使用的 LOD；超出范围时会限制到 DNA 的有效范围 |
+| `Last Solve Ms` / `LastSolveMs` | 上一次完整 RigLogic 求解耗时，单位为毫秒，只读                       |
 
 ### 头部专用属性
 
-| 属性 | 说明 |
-| --- | --- |
+| 属性                       | 说明                                            |
+| -------------------------- | ----------------------------------------------- |
 | `Input Mode` / `InputMode` | `0` 为动态表情属性，`1` 为 FaceBoard GUI 控制器 |
 
 不同 MetaHuman DNA 的输入、输出、LOD 和 BlendShape 数量可能不同。README 不把某个角色的固定数量作为所有 DNA 的保证。

@@ -2,6 +2,7 @@
 #define MOBURIGLOGIC_RIGLOGIC_COMMON_H
 
 #include <cstdint>
+#include <string>
 #include <vector>
 
 namespace moburiglogic {
@@ -54,6 +55,37 @@ typename Owners::mapped_type FindBlendShapePropertyOwner(
         }
     }
     return typename Owners::mapped_type {};
+}
+
+template <typename Owner>
+struct BlendShapePropertyMatch {
+    Owner       owner;
+    std::string propertyName;
+    bool        prefixed;     // true=mesh__channel 命名，false=纯通道名
+};
+
+// BS 属性命名兼容两种 FBX 导出风格：
+//   1. "mesh__channel"：任意宿主均可（优先同名网格）
+//   2. "channel"：仅限同名网格 —— 纯通道名在 teeth/cartilage 等网格上可能重名
+template <typename Owners, typename HasProperty>
+BlendShapePropertyMatch<typename Owners::mapped_type> ResolveBlendShapeProperty(
+    const Owners& owners,
+    const std::string& meshName,
+    const std::string& channelName,
+    HasProperty&& hasProperty )
+{
+    const std::string prefixedName = meshName + "__" + channelName;
+    const auto prefixedOwner = FindBlendShapePropertyOwner(
+        owners, meshName, prefixedName, hasProperty );
+    if (prefixedOwner) {
+        return { prefixedOwner, prefixedName, true };
+    }
+
+    const auto mesh = owners.find( meshName );
+    if (mesh != owners.end() && hasProperty( mesh->second, channelName )) {
+        return { mesh->second, channelName, false };
+    }
+    return { typename Owners::mapped_type {}, std::string(), false };
 }
 
 enum class OutputKind : std::uint8_t {

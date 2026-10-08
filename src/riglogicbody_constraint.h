@@ -21,8 +21,10 @@
 
 #include "riglogic_common.h"
 
+#include <atomic>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -71,6 +73,7 @@ public:
     size_t InputCount()    const { return mInputs.size(); }
     size_t OutputCount()   const { return mOutputs.size(); }
     bool   DnaLoaded()     const { return mRig != nullptr; }
+    double LastSolveMilliseconds() const { return mLastSolveMs.load(); }
     bool   RebuildBindings();
 
 private:
@@ -102,6 +105,10 @@ private:
     std::vector<InputBinding>  mInputs;
     std::vector<OutputBinding> mOutputs;
     std::unordered_map<FBAnimationNode*, moburiglogic::OutputRoute> mOutputRoutes;
+
+    // 并行求值下多个输出节点可能在不同线程同时被通知：求解+读输出须串行
+    std::mutex          mSolveMutex;
+    std::atomic<double> mLastSolveMs { 0.0 };  // 求值线程只写这里，UI 空闲时同步到 LastSolveMs 属性
 
     int  mGroupSkeleton = -1;         // Reference Group: 骨架根（挂 pelvis/root 均可）
     long mLastEvalId    = -1;         // 每求值ID只求解一次（多输出节点共享结果）

@@ -172,6 +172,36 @@ int main()
     ComposeJointRotation( true, qJaw, deltaX, outE );        // 同轴增量 → 角度相加
     CHECK( nearDeg( outE[0], 62 ) && nearDeg( outE[1], 0 ) && nearDeg( outE[2], 0 ) );
 
+    // ---- 驱动输入：由全局反推局部（HIK 激活时 Lcl 节点读到全局，改用此公式）----
+    // 与旧公式 q中立⁻¹∘qPre∘qLcl 等价：构造 父全局∘Pre∘Lcl = 全局
+    {
+        const double parentG[3] = { 10, -35, 80 };
+        const double pre[3] = { -4.6, 45.2, -3.3 };     // upperarm_l 的 PreRotation
+        const double lcl[3] = { -0.61, -45.35, 4.75 };   // upperarm_l 的 Lcl
+        const double neutral[3] = { 5, 40, -2 };
+        double qP[4], qPre[4], qL[4], qPL[4], qG[4];
+        EulerDegToQuat( parentG, qP ); EulerDegToQuat( pre, qPre ); EulerDegToQuat( lcl, qL );
+        QuatMul( qPre, qL, qPL ); QuatMul( qP, qPL, qG );
+        double globalE[3];
+        QuatToEulerDeg( qG, globalE );   // 模拟 MoBu 全局 Rotation 节点给出的欧拉
+
+        double qN[4], qNInv[4], qOld[4], qNewRel[4], tmp[4];
+        EulerDegToQuat( neutral, qN ); QuatConj( qN, qNInv );
+        QuatMul( qNInv, qPre, tmp ); QuatMul( tmp, qL, qOld );          // 旧公式（读 Lcl）
+        DriverRelativeQuat( qNInv, parentG, globalE, qNewRel );        // 新公式（读全局）
+        const double dot = qOld[0]*qNewRel[0] + qOld[1]*qNewRel[1]
+                         + qOld[2]*qNewRel[2] + qOld[3]*qNewRel[3];
+        CHECK( std::fabs( std::fabs( dot ) - 1.0 ) < 1e-9 );
+
+        // 无父级（父全局=单位）：q_rel = q中立⁻¹∘q全局
+        double qRoot[4], expect[4];
+        DriverRelativeQuat( qNInv, zeroE, globalE, qRoot );
+        QuatMul( qNInv, qG, expect );
+        const double dotRoot = qRoot[0]*expect[0] + qRoot[1]*expect[1]
+                             + qRoot[2]*expect[2] + qRoot[3]*expect[3];
+        CHECK( std::fabs( std::fabs( dotRoot ) - 1.0 ) < 1e-9 );
+    }
+
     // ---- namespace 前缀 ----
     CHECK( ExtractNamespacePrefix( "Char01:pelvis", "pelvis" ) == "Char01:" );
     CHECK( ExtractNamespacePrefix( "A:B:head", "head" ) == "A:B:" );

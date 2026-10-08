@@ -52,6 +52,23 @@ inline bool IsZeroRotation( const double e[3] )
     return std::fabs(e[0]) < 1e-6 && std::fabs(e[1]) < 1e-6 && std::fabs(e[2]) < 1e-6;
 }
 
+// 驱动关节输入：由全局旋转反推局部（已含 Pre-Rotation），再相对 DNA 中立：
+//   q_rel = q(DNA中立)⁻¹ ∘ q(父全局)⁻¹ ∘ q(全局)
+// 不直接读 Lcl Rotation：HIK 角色激活（Source=Stance/Control Rig）时，
+// 约束从 Lcl Rotation 输出节点 ReadData 拿到的是全局旋转（MoBu 2019 实测）
+inline void DriverRelativeQuat( const double qNeutralInv[4],
+                                const double parentGlobalEuler[3],
+                                const double globalEuler[3],
+                                double qRel[4] )
+{
+    double qParent[4], qParentInv[4], qGlobal[4], qLocal[4];
+    EulerDegToQuat( parentGlobalEuler, qParent );
+    QuatConj( qParent, qParentInv );
+    EulerDegToQuat( globalEuler, qGlobal );
+    QuatMul( qParentInv, qGlobal, qLocal );
+    QuatMul( qNeutralInv, qLocal, qRel );
+}
+
 // 中立是否烘在 Lcl：Pre-Rotation≈0 且 DNA 中立非零 → 输出需与中立合成。
 // 中立本身为零时合成等价于直写，省掉欧拉↔四元数往返
 inline bool NeedsNeutralCompose( const double preRotation[3], const double neutralRotation[3] )

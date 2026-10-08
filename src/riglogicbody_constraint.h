@@ -10,8 +10,8 @@
  *   - 输入/输出走 FBAnimationNode（求值图内，播放/渲染时正常工作）
  *   - 被约束属性受约束占用（不可手动改，Plot 可烘焙）
  *
- * 输入公式（与 Python 版 body_corrective.py 一致，已跨 DCC 验证）：
- *   q_rel = q(DNA中立)^-1 * q(PreRotation) * q(LclRotation)
+ * 输入公式（由全局旋转反推局部，HIK 激活时也正确）：
+ *   q_rel = q(DNA中立)^-1 * q(父全局)^-1 * q(全局)
  * 输出：
  *   平移 = 中立 + 增量；缩放 = 1 + 增量
  *   旋转 = 增量直写（中立在 Pre-Rotation）或 q中立∘q增量（Pre-Rotation≈0，中立烘在 Lcl）
@@ -82,9 +82,10 @@ public:
 
 private:
     struct InputBinding {
-        FBAnimationNode* node;        // 驱动关节 Rotation 输入（Lcl 欧拉度）
+        FBAnimationNode* node;        // 驱动关节全局 Rotation（欧拉度）
+        FBAnimationNode* parentNode;  // 父关节全局 Rotation；无父级时为空（视为单位旋转）
         std::uint16_t    rawBase;     // raw control 基下标（qx）
-        double           qCorr[4];    // q(DNA中立)^-1 * q(Pre) 预缓存 (x,y,z,w)
+        double           qNeutralInv[4]; // q(DNA中立)^-1 预缓存 (x,y,z,w)
     };
     struct OutputBinding {
         FBAnimationNode* nodeT;       // 修形关节 Translation 输出

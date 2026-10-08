@@ -23,6 +23,7 @@
 #include <cmath>
 #include <cstring>
 #include <map>
+#include <mutex>
 
 //--- Registration defines
 #define RIGLOGICBODY__CLASS   RIGLOGICBODY__CLASSNAME
@@ -355,6 +356,7 @@ bool RigLogicBodyConstraint::AnimationNodeNotify( FBAnimationNode* pConnector,
                                                   FBEvaluateInfo* pEvaluateInfo,
                                                   FBConstraintInfo* pConstraintInfo )
 {
+    std::lock_guard<std::mutex> lock( mSolveMutex );
     if (!mBindingsReady || !mRig || !mInst) return false;
 
     // 每个求值 ID 只跑一次完整求解；后续输出节点直接取缓存结果
@@ -378,7 +380,7 @@ bool RigLogicBodyConstraint::AnimationNodeNotify( FBAnimationNode* pConnector,
         mRig->calculate( mInst );
 
         const auto t1 = std::chrono::steady_clock::now();
-        LastSolveMs = std::chrono::duration<double, std::milli>( t1 - t0 ).count();
+        mLastSolveMs = std::chrono::duration<double, std::milli>( t1 - t0 ).count();
         mLastEvalId = evalId;
     }
 

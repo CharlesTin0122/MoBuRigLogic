@@ -20,6 +20,7 @@
 #include <chrono>
 #include <cmath>
 #include <map>
+#include <mutex>
 
 #define RIGLOGICHEAD__CLASS   RIGLOGICHEAD__CLASSNAME
 #define RIGLOGICHEAD__NAME    "RigLogic Head Expression"
@@ -358,7 +359,14 @@ bool RigLogicHeadConstraint::BuildBindings( std::uint16_t lod )
             };
         } );
 
-    std::map<std::uint16_t, FBModel*> blendShapeHosts;
+    // 每网格缓存宿主与命名风格（首个通道解析，后续通道复用，避免反复全场景扫描）
+    std::map<std::uint16_t, moburiglogic::BlendShapePropertyMatch<FBModel*>> blendShapeHosts;
+    const auto hasAnimatableProperty =
+        []( FBModel* model, const std::string& candidateProperty ) {
+            FBProperty* property =
+                model->PropertyList.Find( candidateProperty.c_str() );
+            return property && property->IsAnimatable();
+        };
     std::size_t mappingOrdinal = 0;
     for (const auto& mapping : mappings)
     {
@@ -368,29 +376,24 @@ bool RigLogicHeadConstraint::BuildBindings( std::uint16_t lod )
             mReader->getBlendShapeChannelName( mapping.channelIndex );
         const std::string channelName(
             channelNameView.data(), channelNameView.size() );
-        const std::string propertyName = meshName + "__" + channelName;
 
-        FBModel* propertyOwner = nullptr;
+        moburiglogic::BlendShapePropertyMatch<FBModel*> match;
         const auto cachedHost = blendShapeHosts.find( mapping.meshIndex );
         if (cachedHost != blendShapeHosts.end()) {
-            propertyOwner = cachedHost->second;
+            match = cachedHost->second;
+            match.propertyName = match.prefixed
+                ? meshName + "__" + channelName
+                : channelName;
         } else {
-            propertyOwner = moburiglogic::FindBlendShapePropertyOwner(
-                models,
-                meshName,
-                propertyName,
-                []( FBModel* model, const std::string& candidateProperty ) {
-                    FBProperty* property =
-                        model->PropertyList.Find( candidateProperty.c_str() );
-                    return property && property->IsAnimatable();
-                } );
-            if (propertyOwner) {
-                blendShapeHosts.emplace( mapping.meshIndex, propertyOwner );
+            match = moburiglogic::ResolveBlendShapeProperty(
+                models, meshName, channelName, hasAnimatableProperty );
+            if (match.owner) {
+                blendShapeHosts.emplace( mapping.meshIndex, match );
             }
         }
 
-        FBProperty* property = propertyOwner
-            ? propertyOwner->PropertyList.Find( propertyName.c_str() )
+        FBProperty* property = match.owner
+            ? match.owner->PropertyList.Find( match.propertyName.c_str() )
             : nullptr;
         if (!property || !property->IsAnimatable()) {
             ++mappingOrdinal;
@@ -475,6 +478,7 @@ bool RigLogicHeadConstraint::AnimationNodeNotify( FBAnimationNode* pConnector,
                                                   FBEvaluateInfo* pEvaluateInfo,
                                                   FBConstraintInfo* pConstraintInfo )
 {
+    std::lock_guard<std::mutex> lock( mSolveMutex );
     if (!mBindingsReady || !mRig || !mInst) return false;
 
     const long evalId = pEvaluateInfo->GetEvaluationID();
@@ -516,7 +520,7 @@ bool RigLogicHeadConstraint::AnimationNodeNotify( FBAnimationNode* pConnector,
         }
         mRig->calculate( mInst );
 
-        LastSolveMs = std::chrono::duration<double, std::milli>(
+        mLastSolveMs = std::chrono::duration<double, std::milli>(
             std::chrono::steady_clock::now() - t0 ).count();
         mLastEvalId = evalId;
     }

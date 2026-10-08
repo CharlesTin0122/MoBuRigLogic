@@ -46,6 +46,57 @@ int main()
             return host == 10 && propertyName == "head_lod0_mesh__brow_down_L";
         } );
     CHECK( fallbackOwner == 10 );
+
+    // ResolveBlendShapeProperty：两种 FBX 导出命名风格
+    using PropSet = std::map<int, std::vector<std::string>>;
+    const auto hasIn = []( const PropSet& props ) {
+        return [&props]( int host, const std::string& propertyName ) {
+            const auto it = props.find( host );
+            if (it == props.end()) return false;
+            for (const auto& p : it->second)
+                if (p == propertyName) return true;
+            return false;
+        };
+    };
+    const std::map<std::string, int> meshHosts {
+        { "head_lod0_mesh", 1 },
+        { "teeth_lod0_mesh", 2 }
+    };
+
+    // 纯通道名（MBRig_H10100_RigLogic_001.fbx 风格）
+    const PropSet plainProps { { 1, { "jaw_open" } }, { 2, { "jaw_open" } } };
+    const auto plain = ResolveBlendShapeProperty(
+        meshHosts, "teeth_lod0_mesh", "jaw_open", hasIn( plainProps ) );
+    CHECK( plain.owner == 2 );                 // 必须落在同名网格，不能串到 head
+    CHECK( plain.propertyName == "jaw_open" );
+    CHECK( !plain.prefixed );
+
+    // 纯通道名不跨网格兜底：同名网格没有该属性 → 未找到
+    const PropSet otherMeshOnly { { 1, { "jaw_open" } } };
+    const auto noCross = ResolveBlendShapeProperty(
+        meshHosts, "teeth_lod0_mesh", "jaw_open", hasIn( otherMeshOnly ) );
+    CHECK( noCross.owner == 0 );
+    CHECK( noCross.propertyName.empty() );
+
+    // mesh__channel 风格：允许宿主与网格不同名
+    const PropSet prefixedProps { { 1, { "teeth_lod0_mesh__jaw_open" } } };
+    const auto prefixed = ResolveBlendShapeProperty(
+        meshHosts, "teeth_lod0_mesh", "jaw_open", hasIn( prefixedProps ) );
+    CHECK( prefixed.owner == 1 );
+    CHECK( prefixed.propertyName == "teeth_lod0_mesh__jaw_open" );
+    CHECK( prefixed.prefixed );
+
+    // 两种命名并存时优先 mesh__channel
+    const PropSet bothProps { { 2, { "jaw_open", "teeth_lod0_mesh__jaw_open" } } };
+    const auto both = ResolveBlendShapeProperty(
+        meshHosts, "teeth_lod0_mesh", "jaw_open", hasIn( bothProps ) );
+    CHECK( both.owner == 2 );
+    CHECK( both.prefixed );
+
+    // 网格不在场景中
+    const auto missing = ResolveBlendShapeProperty(
+        meshHosts, "eyeLeft_lod0_mesh", "jaw_open", hasIn( plainProps ) );
+    CHECK( missing.owner == 0 );
     const OutputRoute translation { OutputKind::JointTranslation, 11 };
     const OutputRoute rotation { OutputKind::JointRotation, 22 };
     const OutputRoute scaling { OutputKind::JointScaling, 33 };

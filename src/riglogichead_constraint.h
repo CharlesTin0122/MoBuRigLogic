@@ -16,7 +16,9 @@
 
 #include "riglogic_common.h"
 
+#include <atomic>
 #include <cstdint>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -67,6 +69,7 @@ public:
     size_t JointOutCount() const { return mJointOutputs.size(); }
     size_t BsCount()       const { return mBsOutputs.size(); }
     bool   DnaLoaded()     const { return mRig != nullptr; }
+    double LastSolveMilliseconds() const { return mLastSolveMs.load(); }
     bool   RebuildBindings();
     void   ZeroAllExpressions();   //!< 全部表情属性归零（表情属性模式用）
 
@@ -116,6 +119,10 @@ private:
     std::vector<JointOutput> mJointOutputs;
     std::vector<BsOutput>    mBsOutputs;
     std::unordered_map<FBAnimationNode*, moburiglogic::OutputRoute> mOutputRoutes;
+
+    // 并行求值下多个输出节点可能在不同线程同时被通知：求解+读输出须串行
+    std::mutex          mSolveMutex;
+    std::atomic<double> mLastSolveMs { 0.0 };  // 求值线程只写这里，UI 空闲时同步到 LastSolveMs 属性
 
     int  mGroupSkeleton = -1;
     long mLastEvalId    = -1;

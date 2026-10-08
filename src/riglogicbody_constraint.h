@@ -13,7 +13,8 @@
  * 输入公式（与 Python 版 body_corrective.py 一致，已跨 DCC 验证）：
  *   q_rel = q(DNA中立)^-1 * q(PreRotation) * q(LclRotation)
  * 输出：
- *   平移 = 中立 + 增量；旋转 = 增量直写；缩放 = 1 + 增量
+ *   平移 = 中立 + 增量；缩放 = 1 + 增量
+ *   旋转 = 增量直写（中立在 Pre-Rotation）或 q中立∘q增量（Pre-Rotation≈0，中立烘在 Lcl）
  */
 
 //--- SDK include
@@ -91,6 +92,8 @@ private:
         FBAnimationNode* nodeS;       // Scaling 输出
         std::uint32_t    jointIndex;  // DNA 关节下标
         float            neutralT[3]; // DNA 中立平移
+        double           qNeutral[4]; // DNA 中立旋转（composeRot 时与增量合成）
+        bool             composeRot;  // 中立烘在 Lcl（Pre-Rotation≈0）→ q中立∘q增量
     };
 
     bool  LoadDna();                  // 读 DNA + 建 RigLogic/RigInstance
@@ -115,6 +118,7 @@ private:
 
     int  mGroupSkeleton = -1;         // Reference Group: 骨架根（挂 pelvis/root 均可）
     long mLastEvalId    = -1;         // 每求值ID只求解一次（多输出节点共享结果）
+    int  mAppliedLod    = -1;         // 当前绑定所用 LOD；UI 空闲时与 LodLevel 比对，变了即重建
     bool mBindingsReady = false;
 };
 

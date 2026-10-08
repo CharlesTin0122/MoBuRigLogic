@@ -129,6 +129,7 @@ private:
 
     int  mGroupSkeleton = -1;
     long mLastEvalId    = -1;
+    int  mAppliedLod    = -1;         // 当前绑定所用 LOD；UI 空闲时与 LodLevel 比对，变了即重建
     bool mBindingsReady = false;
 };
 

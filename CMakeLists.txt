@@ -43,6 +43,8 @@ add_library(${PROJECT_NAME} SHARED
     src/riglogichead_constraint.h
     src/riglogic_layouts.cxx
     src/riglogic_layouts.h
+    src/riglogic_common.h
+    src/riglogic_scene.h
 )
 
 # MotionBuilder plug-in output

@@ -1,5 +1,6 @@
 #include "riglogic_common.h"
 
+#include <cmath>
 #include <cstdint>
 #include <map>
 #include <string>
@@ -109,5 +110,72 @@ int main()
     CHECK( scaling.bindingIndex == 33 );
     CHECK( blendShape.kind == OutputKind::BlendShape );
     CHECK( blendShape.bindingIndex == 44 );
+
+    // ---- 四元数/欧拉（Head/Body 共用，原先两份各自实现）----
+    const auto near = []( double a, double b ) { return std::fabs( a - b ) < 1e-9; };
+    const auto nearDeg = []( double a, double b ) { return std::fabs( a - b ) < 1e-6; };
+
+    const double zeroE[3] = { 0, 0, 0 };
+    double qi[4];
+    EulerDegToQuat( zeroE, qi );
+    CHECK( near( qi[0], 0 ) && near( qi[1], 0 ) && near( qi[2], 0 ) && near( qi[3], 1 ) );
+
+    // 单轴 90°：q = (sin45°, 0, 0, cos45°)
+    const double x90[3] = { 90, 0, 0 };
+    double qx90[4];
+    EulerDegToQuat( x90, qx90 );
+    CHECK( near( qx90[0], std::sqrt( 0.5 ) ) && near( qx90[3], std::sqrt( 0.5 ) ) );
+
+    // 欧拉 → 四元数 → 欧拉 往返（含 FACIAL_C_Jaw 中立 [40,0,0] 与三轴混合）
+    const double samples[][3] = {
+        { 40, 0, 0 }, { 10, -20, 30 }, { -170, 45, 89 }, { 0.68, 164.28 - 180.0, 95.11 }
+    };
+    for (const auto& e : samples)
+    {
+        double q[4], back[3];
+        EulerDegToQuat( e, q );
+        QuatToEulerDeg( q, back );
+        CHECK( nearDeg( back[0], e[0] ) && nearDeg( back[1], e[1] ) && nearDeg( back[2], e[2] ) );
+    }
+
+    // q∘q⁻¹ = 单位
+    double qa[4], qaInv[4], qid[4];
+    EulerDegToQuat( samples[1], qa );
+    QuatConj( qa, qaInv );
+    QuatMul( qa, qaInv, qid );
+    CHECK( near( qid[0], 0 ) && near( qid[1], 0 ) && near( qid[2], 0 ) && near( qid[3], 1 ) );
+
+    // XYZ 旋转序：q = qz∘qy∘qx（与 MoBu kFBEulerXYZ 一致）
+    const double y90[3] = { 0, 90, 0 }, xy[3] = { 90, 90, 0 };
+    double qy90[4], qxy[4], qcomp[4];
+    EulerDegToQuat( y90, qy90 );
+    EulerDegToQuat( xy, qxy );
+    QuatMul( qy90, qx90, qcomp );
+    CHECK( near( qxy[0], qcomp[0] ) && near( qxy[1], qcomp[1] )
+        && near( qxy[2], qcomp[2] ) && near( qxy[3], qcomp[3] ) );
+
+    // ---- 关节旋转输出策略 ----
+    const double preZero[3] = { 0, 0, 0 }, preSet[3] = { 40, 0, 0 };
+    const double neutralJaw[3] = { 40, 0, 0 };
+    CHECK( NeedsNeutralCompose( preZero, neutralJaw ) );     // 中立烘在 Lcl → 合成
+    CHECK( !NeedsNeutralCompose( preSet, neutralJaw ) );     // 中立在 Pre-Rotation → 直写
+    CHECK( !NeedsNeutralCompose( preZero, zeroE ) );         // 中立为零 → 直写（合成等价）
+
+    double qJaw[4], outE[3];
+    EulerDegToQuat( neutralJaw, qJaw );
+    const double delta[3] = { 22.0, -0.5, 0.7 };
+    ComposeJointRotation( false, qJaw, delta, outE );
+    CHECK( outE[0] == delta[0] && outE[1] == delta[1] && outE[2] == delta[2] );
+    ComposeJointRotation( true, qJaw, zeroE, outE );         // 零增量 → 恰为中立
+    CHECK( nearDeg( outE[0], 40 ) && nearDeg( outE[1], 0 ) && nearDeg( outE[2], 0 ) );
+    const double deltaX[3] = { 22, 0, 0 };
+    ComposeJointRotation( true, qJaw, deltaX, outE );        // 同轴增量 → 角度相加
+    CHECK( nearDeg( outE[0], 62 ) && nearDeg( outE[1], 0 ) && nearDeg( outE[2], 0 ) );
+
+    // ---- namespace 前缀 ----
+    CHECK( ExtractNamespacePrefix( "Char01:pelvis", "pelvis" ) == "Char01:" );
+    CHECK( ExtractNamespacePrefix( "A:B:head", "head" ) == "A:B:" );
+    CHECK( ExtractNamespacePrefix( "pelvis", "pelvis" ).empty() );
+    CHECK( ExtractNamespacePrefix( "Char01:pelvis_x", "pelvis" ).empty() );
     return 0;
 }

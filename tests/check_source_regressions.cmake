@@ -57,6 +57,17 @@ assert_not_contains("${head_content}" "        LastSolveMs =" "Head property wri
 assert_not_contains("${body_content}" "        LastSolveMs =" "Body property write on evaluation thread")
 assert_contains("${head_content}" "RigLogicHeadConstraint::EventUIIdle" "Head solve-time sync on main thread")
 assert_contains("${body_content}" "RigLogicBodyConstraint::EventUIIdle" "Body solve-time sync on main thread")
+
+# 共用工具只保留一份实现
+foreach(content_var head_content body_content)
+    assert_not_contains("${${content_var}}" "void QuatMul(" "duplicated quaternion helper in ${content_var}")
+    assert_not_contains("${${content_var}}" "void CollectModels(" "unused CollectModels in ${content_var}")
+    assert_not_contains("${${content_var}}" "DataLayer::All" "Geometry layer loaded at runtime in ${content_var}")
+    assert_contains("${${content_var}}" "mLoadedDnaPath != path" "idempotent FbxRetrieve DNA load in ${content_var}")
+    assert_contains("${${content_var}}" "lod != mAppliedLod" "LOD change rebuild in ${content_var}")
+endforeach()
+assert_contains("${body_content}" "ComposeJointRotation(" "Body neutral-compose rotation output")
+assert_contains("${head_content}" "ComposeJointRotation(" "Head neutral-compose rotation output")
 assert_not_contains("${head_content}" "getJointVariableAttributeIndices( static_cast" "unsafe Head LOD query")
 assert_not_contains("${body_content}" "getJointVariableAttributeIndices( static_cast" "unsafe Body LOD query")
 assert_not_contains("${layout_content}" "Active = false" "Layout Active-off rebuild")

@@ -10,6 +10,7 @@
 //--- Class declaration
 #include "riglogicbody_constraint.h"
 #include "riglogic_common.h"
+#include "riglogic_scene.h"
 
 //--- OpenRigLogic
 #include <dna/BinaryStreamReader.h>
@@ -21,7 +22,6 @@
 
 #include <chrono>
 #include <cmath>
-#include <cstring>
 #include <map>
 #include <mutex>
 
@@ -38,83 +38,13 @@ FBRegisterConstraint( RIGLOGICBODY__NAME,
                       RIGLOGICBODY__DESC,
                       FB_DEFAULT_SDK_ICON );
 
-namespace {
-
-// XYZ 旋转序欧拉角（度）→ 四元数 (x,y,z,w)。与 Python 版 _euler_deg_to_quat 一致。
-void EulerDegToQuat( const double e[3], double q[4] )
-{
-    const double hx = e[0] * 3.14159265358979323846 / 360.0;
-    const double hy = e[1] * 3.14159265358979323846 / 360.0;
-    const double hz = e[2] * 3.14159265358979323846 / 360.0;
-    const double cx = std::cos(hx), sx = std::sin(hx);
-    const double cy = std::cos(hy), sy = std::sin(hy);
-    const double cz = std::cos(hz), sz = std::sin(hz);
-    // q = qz * qy * qx
-    const double qz[4] = { 0, 0, sz, cz };
-    const double qy[4] = { 0, sy, 0, cy };
-    const double qx[4] = { sx, 0, 0, cx };
-    double t[4];
-    // t = qz * qy
-    t[0] = qz[3]*qy[0] + qz[0]*qy[3] + qz[1]*qy[2] - qz[2]*qy[1];
-    t[1] = qz[3]*qy[1] - qz[0]*qy[2] + qz[1]*qy[3] + qz[2]*qy[0];
-    t[2] = qz[3]*qy[2] + qz[0]*qy[1] - qz[1]*qy[0] + qz[2]*qy[3];
-    t[3] = qz[3]*qy[3] - qz[0]*qy[0] - qz[1]*qy[1] - qz[2]*qy[2];
-    // q = t * qx
-    q[0] = t[3]*qx[0] + t[0]*qx[3] + t[1]*qx[2] - t[2]*qx[1];
-    q[1] = t[3]*qx[1] - t[0]*qx[2] + t[1]*qx[3] + t[2]*qx[0];
-    q[2] = t[3]*qx[2] + t[0]*qx[1] - t[1]*qx[0] + t[2]*qx[3];
-    q[3] = t[3]*qx[3] - t[0]*qx[0] - t[1]*qx[1] - t[2]*qx[2];
-}
-
-void QuatMul( const double a[4], const double b[4], double out[4] )
-{
-    out[0] = a[3]*b[0] + a[0]*b[3] + a[1]*b[2] - a[2]*b[1];
-    out[1] = a[3]*b[1] - a[0]*b[2] + a[1]*b[3] + a[2]*b[0];
-    out[2] = a[3]*b[2] + a[0]*b[1] - a[1]*b[0] + a[2]*b[3];
-    out[3] = a[3]*b[3] - a[0]*b[0] - a[1]*b[1] - a[2]*b[2];
-}
-
-void QuatConj( const double q[4], double out[4] )
-{
-    out[0] = -q[0]; out[1] = -q[1]; out[2] = -q[2]; out[3] = q[3];
-}
-
-// 递归收集模型树中全部骨骼（含普通 FBModel，按名字匹配 DNA）
-void CollectModels( FBModel* root, std::map<std::string, FBModel*>& out )
-{
-    if (!root) return;
-    out[ std::string( root->Name.AsString() ) ] = root;
-    for (int i = 0; i < root->Children.GetCount(); ++i)
-        CollectModels( root->Children[i], out );
-}
-
-// 提取模型的 namespace 前缀（"Char01:pelvis" → "Char01:"；无则空串）
-std::string ExtractNamespace( FBModel* m )
-{
-    std::string longName( m->LongName.AsString() );
-    std::string shortName( m->Name.AsString() );
-    if (longName.size() > shortName.size()
-        && longName.compare( longName.size() - shortName.size(),
-                             shortName.size(), shortName ) == 0)
-        return longName.substr( 0, longName.size() - shortName.size() );
-    return std::string();
-}
-
-// namespace 感知收集：只收 LongName 以 ns 开头的模型，key=剥掉 ns 的短名
-void CollectModelsNs( FBModel* root, const std::string& ns,
-                      std::map<std::string, FBModel*>& out )
-{
-    if (!root) return;
-    std::string longName( root->LongName.AsString() );
-    if (ns.empty())
-        out[ std::string( root->Name.AsString() ) ] = root;
-    else if (longName.rfind( ns, 0 ) == 0)
-        out[ longName.substr( ns.size() ) ] = root;
-    for (int i = 0; i < root->Children.GetCount(); ++i)
-        CollectModelsNs( root->Children[i], ns, out );
-}
-
-} // namespace
+using moburiglogic::CollectModelsNs;
+using moburiglogic::ComposeJointRotation;
+using moburiglogic::EulerDegToQuat;
+using moburiglogic::ExtractNamespace;
+using moburiglogic::NeedsNeutralCompose;
+using moburiglogic::QuatConj;
+using moburiglogic::QuatMul;
 
 /************************************************
  *  Creation
@@ -142,6 +72,15 @@ void RigLogicBodyConstraint::EventUIIdle( HISender, HKEvent )
 {
     const double ms = mLastSolveMs.load();
     if ((double)LastSolveMs != ms) LastSolveMs = ms;
+
+    // LOD 改动即时生效：驱动集/BS 映射随 LOD 变化，需重建绑定（不止 setLOD）。
+    // 先记下目标 LOD 再重建，重建失败也不会每个空闲周期反复重试
+    const int lod = static_cast<int>( LodLevel );
+    if (mRig && mAppliedLod >= 0 && lod != mAppliedLod)
+    {
+        mAppliedLod = lod;
+        RebuildBindings();
+    }
 }
 
 void RigLogicBodyConstraint::FBDestroy()
@@ -155,28 +94,32 @@ void RigLogicBodyConstraint::FBDestroy()
  ************************************************/
 bool RigLogicBodyConstraint::LoadDna()
 {
-    ReleaseDna();
     const char* path = DnaPath.AsString();
-    if (!path || !*path) return false;
+    moburiglogic::RigRuntime fresh;
+    const bool loaded = path && *path && moburiglogic::LoadRigRuntime( path, fresh );
 
-    mStream = trio::FileStream::create( path,
-                                        trio::FileStream::AccessMode::Read,
-                                        trio::FileStream::OpenMode::Binary );
-    if (!mStream) return false;
-
-    mReader = dna::BinaryStreamReader::create( mStream, dna::DataLayer::All );
-    mReader->read();
-    if (!sc::Status::isOk()) { ReleaseDna(); return false; }
+    // 耗时的读取/构建在锁外完成，锁内只交换指针：求值线程看不到半成品，
+    // 也不会在旧运行时被销毁时还在用它
+    moburiglogic::RigRuntime old;
+    {
+        std::lock_guard<std::mutex> lock( mSolveMutex );
+        old = { mStream, mReader, mRig, mInst };
+        mStream = fresh.stream;
+        mReader = fresh.reader;
+        mRig    = fresh.rig;
+        mInst   = fresh.inst;
+        mBindingsReady = false;   // 旧绑定的关节下标属于旧 DNA
+        mLastEvalId = -1;
+    }
+    moburiglogic::DestroyRigRuntime( old );
+    if (!loaded)
+    {
+        mLoadedDnaPath.clear();
+        return false;
+    }
 
     const auto lodCount = mReader->getLODCount();
-    if (lodCount == 0) { ReleaseDna(); return false; }
     LodLevel.SetMinMax( 0.0, static_cast<double>( lodCount - 1u ), true, true );
-
-    mRig = rl4::RigLogic::create( mReader );
-    if (!mRig) { ReleaseDna(); return false; }
-    mInst = rl4::RigInstance::create( mRig );
-    if (!mInst) { ReleaseDna(); return false; }
-
     const auto validLod = moburiglogic::ClampLod( static_cast<int>( LodLevel ), lodCount );
     LodLevel = static_cast<int>( validLod );
     mInst->setLOD( validLod );
@@ -186,10 +129,16 @@ bool RigLogicBodyConstraint::LoadDna()
 
 void RigLogicBodyConstraint::ReleaseDna()
 {
-    if (mInst)   { rl4::RigInstance::destroy( mInst );        mInst = nullptr; }
-    if (mRig)    { rl4::RigLogic::destroy( mRig );            mRig = nullptr; }
-    if (mReader) { dna::BinaryStreamReader::destroy( mReader ); mReader = nullptr; }
-    if (mStream) { trio::FileStream::destroy( mStream );      mStream = nullptr; }
+    moburiglogic::RigRuntime old;
+    {
+        std::lock_guard<std::mutex> lock( mSolveMutex );
+        old = { mStream, mReader, mRig, mInst };
+        mStream = nullptr; mReader = nullptr; mRig = nullptr; mInst = nullptr;
+        mBindingsReady = false;
+    }
+    moburiglogic::DestroyRigRuntime( old );
+    mLoadedDnaPath.clear();
+    mAppliedLod = -1;
 }
 
 std::uint16_t RigLogicBodyConstraint::ResolveLod() const
@@ -288,6 +237,14 @@ bool RigLogicBodyConstraint::BuildBindings( std::uint16_t lod )
         ob.jointIndex = j;
         auto nt = mReader->getNeutralJointTranslation( static_cast<std::uint16_t>(j) );
         ob.neutralT[0] = nt.x; ob.neutralT[1] = nt.y; ob.neutralT[2] = nt.z;
+
+        // 旋转策略同 Head：Pre-Rotation≈0 且中立非零 → 中立烘在 Lcl，输出需合成
+        FBVector3d pre = m->PreRotation;
+        const double preE[3] = { pre[0], pre[1], pre[2] };
+        auto nr = mReader->getNeutralJointRotation( static_cast<std::uint16_t>(j) );
+        const double neutralE[3] = { nr.x, nr.y, nr.z };
+        ob.composeRot = NeedsNeutralCompose( preE, neutralE );
+        EulerDegToQuat( neutralE, ob.qNeutral );
         ob.nodeT = AnimationNodeInCreate( 3000 + j * 3 + 0, m, ANIMATIONNODE_TYPE_LOCAL_TRANSLATION );
         ob.nodeR = AnimationNodeInCreate( 3000 + j * 3 + 1, m, ANIMATIONNODE_TYPE_LOCAL_ROTATION );
         ob.nodeS = AnimationNodeInCreate( 3000 + j * 3 + 2, m, ANIMATIONNODE_TYPE_LOCAL_SCALING );
@@ -324,6 +281,7 @@ void RigLogicBodyConstraint::SetupAllAnimationNodes()
     LodLevel = static_cast<int>( validLod );
     mInst->setLOD( validLod );
     BuildBindings( validLod );
+    mAppliedLod = static_cast<int>( validLod );
     mLastEvalId = -1;
 }
 
@@ -417,11 +375,13 @@ bool RigLogicBodyConstraint::AnimationNodeNotify( FBAnimationNode* pConnector,
     }
     case moburiglogic::OutputKind::JointRotation:
     {
-        double value[3] = {
+        const double deltaEuler[3] = {
             jointOutputs[base + 3u],
             jointOutputs[base + 4u],
             jointOutputs[base + 5u]
         };
+        double value[3];
+        ComposeJointRotation( output.composeRot, output.qNeutral, deltaEuler, value );
         output.nodeR->WriteData( value, pEvaluateInfo );
         return true;
     }
@@ -453,8 +413,10 @@ bool RigLogicBodyConstraint::FbxRetrieve( FBFbxObject* pFbxObject, kFbxObjectSto
 {
     if (pStoreWhat == kCleanup)
     {
-        // 场景加载完成后重建运行时
-        if (DnaPath.AsString() && *DnaPath.AsString())
+        // 场景加载完成后重建运行时；若 SetupAllAnimationNodes 已按同一路径加载过则跳过，
+        // 避免重复读取 DNA 并在求值可能已开始时替换运行时
+        const char* path = DnaPath.AsString();
+        if (path && *path && (!mRig || mLoadedDnaPath != path))
             LoadDna();
     }
     return true;

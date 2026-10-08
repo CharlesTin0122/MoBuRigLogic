@@ -3,7 +3,7 @@
  *
  * 求值流程（每 EvaluationID 一次）：
  *   1. 读 252 个表情属性（GetData + evalInfo，支持K帧动画）→ setRawControl
- *   2. 读 neck_01/neck_02/head Lcl Rotation → q_rel = qCorr∘q_lcl → 12 个四元数 raw
+ *   2. 读 neck_01/neck_02/head 及父级全局旋转 → q_rel = q中立⁻¹∘q父全局⁻¹∘q全局 → 12 个四元数 raw
  *   3. rig->calculate → 输出节点按通知写：关节 T(中立+增量)/R(q中立∘q增量 合成)；BS ×100
  */
 
@@ -37,11 +37,11 @@ FBRegisterConstraint( RIGLOGICHEAD__NAME,
 
 using moburiglogic::CollectModelsNs;
 using moburiglogic::ComposeJointRotation;
+using moburiglogic::DriverRelativeQuat;
 using moburiglogic::EulerDegToQuat;
 using moburiglogic::ExtractNamespace;
 using moburiglogic::NeedsNeutralCompose;
 using moburiglogic::QuatConj;
-using moburiglogic::QuatMul;
 
 bool RigLogicHeadConstraint::FBCreate()
 {
@@ -240,18 +240,16 @@ bool RigLogicHeadConstraint::BuildBindings( std::uint16_t lod )
             NeckInput ni;
             ni.rawBase = i;
             ni.node = AnimationNodeOutCreate( 1000 + i, itModel->second,
-                                              ANIMATIONNODE_TYPE_LOCAL_ROTATION );
+                                              ANIMATIONNODE_TYPE_ROTATION );
+            ni.parentNode = itModel->second->Parent
+                ? AnimationNodeOutCreate( 2000 + i, itModel->second->Parent,
+                                          ANIMATIONNODE_TYPE_ROTATION )
+                : nullptr;
             auto nr = mReader->getNeutralJointRotation( itJoint->second );
             const double neutralE[3] = { nr.x, nr.y, nr.z };
-            double qNeutral[4], qNeutralInv[4];
+            double qNeutral[4];
             EulerDegToQuat( neutralE, qNeutral );
-            QuatConj( qNeutral, qNeutralInv );
-
-            FBVector3d pre = itModel->second->PreRotation;
-            const double preE[3] = { pre[0], pre[1], pre[2] };
-            double qPre[4];
-            EulerDegToQuat( preE, qPre );
-            QuatMul( qNeutralInv, qPre, ni.qCorr );
+            QuatConj( qNeutral, ni.qNeutralInv );
             mNeckInputs.push_back( ni );
         }
     }
@@ -436,92 +434,123 @@ bool RigLogicHeadConstraint::AnimationNodeNotify( FBAnimationNode* pConnector,
                                                   FBEvaluateInfo* pEvaluateInfo,
                                                   FBConstraintInfo* pConstraintInfo )
 {
-    std::lock_guard<std::mutex> lock( mSolveMutex );
-    if (!mBindingsReady || !mRig || !mInst) return false;
-
+    // 锁只包住纯 RigLogic 计算与结果拷贝，不包 ReadData/GetData/WriteData：
+    // 读取可能触发上游（如 HIK 解算）求值并回到本约束，持锁读取会自锁死
     const long evalId = pEvaluateInfo->GetEvaluationID();
-    if (evalId != mLastEvalId)
+    bool needSolve;
+    {
+        std::lock_guard<std::mutex> lock( mSolveMutex );
+        if (!mBindingsReady || !mRig || !mInst) return false;
+        needSolve = ( evalId != mLastEvalId );
+    }
+
+    if (needSolve)
     {
         const auto t0 = std::chrono::steady_clock::now();
 
-        if (!mGuiInputs.empty())
+        // FaceBoard 模式：面板位移；表情属性模式：属性值（支持K帧动画取值）
+        std::vector<float> guiValues( mGuiInputs.size() );
+        for (std::size_t i = 0; i < mGuiInputs.size(); ++i)
         {
-            // FaceBoard 模式：面板位移 → setGUIControl → DNA 内置翻译层
-            for (const auto& gi : mGuiInputs)
-            {
-                double t[3] = { 0, 0, 0 };
-                gi.node->ReadData( t, pEvaluateInfo );
-                mInst->setGUIControl( gi.guiIndex, static_cast<float>( t[ gi.axis ] ) );
-            }
-            mRig->mapGUIToRawControls( mInst );   // 双向拆分/相位/量程全在 DNA 里
+            double t[3] = { 0, 0, 0 };
+            mGuiInputs[i].node->ReadData( t, pEvaluateInfo );
+            guiValues[i] = static_cast<float>( t[ mGuiInputs[i].axis ] );
         }
-        else
+        std::vector<float> exprValues;
+        if (mGuiInputs.empty())
         {
-            for (const auto& ei : mExprInputs)
+            exprValues.resize( mExprInputs.size() );
+            for (std::size_t i = 0; i < mExprInputs.size(); ++i)
             {
                 double v = 0.0;
-                ei.prop->GetData( &v, sizeof(v), pEvaluateInfo );  // 支持K帧动画取值
-                mInst->setRawControl( ei.rawIndex, static_cast<float>( v ) );
+                mExprInputs[i].prop->GetData( &v, sizeof(v), pEvaluateInfo );
+                exprValues[i] = static_cast<float>( v );
             }
         }
-        for (const auto& ni : mNeckInputs)
+        std::vector<double> neckQuats( mNeckInputs.size() * 4u );
+        for (std::size_t i = 0; i < mNeckInputs.size(); ++i)
         {
-            double e[3] = { 0, 0, 0 };
-            ni.node->ReadData( e, pEvaluateInfo );
-            double qLcl[4], qRel[4];
-            EulerDegToQuat( e, qLcl );
-            QuatMul( ni.qCorr, qLcl, qRel );
-            mInst->setRawControl( ni.rawBase + 0, static_cast<float>( qRel[0] ) );
-            mInst->setRawControl( ni.rawBase + 1, static_cast<float>( qRel[1] ) );
-            mInst->setRawControl( ni.rawBase + 2, static_cast<float>( qRel[2] ) );
-            mInst->setRawControl( ni.rawBase + 3, static_cast<float>( qRel[3] ) );
+            const auto& ni = mNeckInputs[i];
+            double globalE[3] = { 0, 0, 0 }, parentE[3] = { 0, 0, 0 };
+            ni.node->ReadData( globalE, pEvaluateInfo );
+            if (ni.parentNode) ni.parentNode->ReadData( parentE, pEvaluateInfo );
+            DriverRelativeQuat( ni.qNeutralInv, parentE, globalE, &neckQuats[ i * 4u ] );
         }
-        mRig->calculate( mInst );
 
-        mLastSolveMs = std::chrono::duration<double, std::milli>(
-            std::chrono::steady_clock::now() - t0 ).count();
-        mLastEvalId = evalId;
+        std::lock_guard<std::mutex> lock( mSolveMutex );
+        if (!mBindingsReady || !mRig || !mInst) return false;
+        if (evalId != mLastEvalId)   // 并发时可能已被其他线程解完
+        {
+            if (!mGuiInputs.empty())
+            {
+                for (std::size_t i = 0; i < mGuiInputs.size(); ++i)
+                    mInst->setGUIControl( mGuiInputs[i].guiIndex, guiValues[i] );
+                mRig->mapGUIToRawControls( mInst );   // 双向拆分/相位/量程全在 DNA 里
+            }
+            else
+            {
+                for (std::size_t i = 0; i < mExprInputs.size(); ++i)
+                    mInst->setRawControl( mExprInputs[i].rawIndex, exprValues[i] );
+            }
+            // 颈部四元数在 GUI 映射之后写入，不被覆盖
+            for (std::size_t i = 0; i < mNeckInputs.size(); ++i)
+                for (std::uint16_t k = 0; k < 4u; ++k)
+                    mInst->setRawControl( mNeckInputs[i].rawBase + k,
+                                          static_cast<float>( neckQuats[ i * 4u + k ] ) );
+            mRig->calculate( mInst );
+
+            mLastSolveMs = std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - t0 ).count();
+            mLastEvalId = evalId;
+        }
     }
 
     const auto routeIt = mOutputRoutes.find( pConnector );
     if (routeIt == mOutputRoutes.end()) return false;
-    const auto& route = routeIt->second;
+    const auto route = routeIt->second;
 
     if (route.kind == moburiglogic::OutputKind::BlendShape)
     {
         if (route.bindingIndex >= mBsOutputs.size()) return false;
         const auto& out = mBsOutputs[ route.bindingIndex ];
-        const auto bs = mInst->getBlendShapeOutputs();
-        double value = out.channel < bs.size() ? bs[ out.channel ] * 100.0 : 0.0;
+        double value = 0.0;
+        {
+            std::lock_guard<std::mutex> lock( mSolveMutex );
+            if (!mInst) return false;
+            const auto bs = mInst->getBlendShapeOutputs();
+            value = out.channel < bs.size() ? bs[ out.channel ] * 100.0 : 0.0;
+        }
         out.node->WriteData( &value, pEvaluateInfo );
         return true;
     }
 
     if (route.bindingIndex >= mJointOutputs.size()) return false;
     const auto& out = mJointOutputs[ route.bindingIndex ];
-    const auto jointOutputs = mInst->getJointOutputs();
-    const std::size_t base = static_cast<std::size_t>( out.jointIndex ) * 9u;
-    if (base + 9u > jointOutputs.size()) return false;
+    float delta[9];
+    {
+        std::lock_guard<std::mutex> lock( mSolveMutex );
+        if (!mInst) return false;
+        const auto jointOutputs = mInst->getJointOutputs();
+        const std::size_t base = static_cast<std::size_t>( out.jointIndex ) * 9u;
+        if (base + 9u > jointOutputs.size()) return false;
+        for (std::size_t k = 0; k < 9u; ++k) delta[k] = jointOutputs[base + k];
+    }
 
     switch (route.kind)
     {
     case moburiglogic::OutputKind::JointTranslation:
     {
         double value[3] = {
-            out.neutralT[0] + jointOutputs[base + 0u],
-            out.neutralT[1] + jointOutputs[base + 1u],
-            out.neutralT[2] + jointOutputs[base + 2u]
+            out.neutralT[0] + delta[0],
+            out.neutralT[1] + delta[1],
+            out.neutralT[2] + delta[2]
         };
         out.nodeT->WriteData( value, pEvaluateInfo );
         return true;
     }
     case moburiglogic::OutputKind::JointRotation:
     {
-        const double deltaEuler[3] = {
-            jointOutputs[base + 3u],
-            jointOutputs[base + 4u],
-            jointOutputs[base + 5u]
-        };
+        const double deltaEuler[3] = { delta[3], delta[4], delta[5] };
         double value[3];
         ComposeJointRotation( out.composeRot, out.qNeutral, deltaEuler, value );
         out.nodeR->WriteData( value, pEvaluateInfo );
@@ -530,11 +559,7 @@ bool RigLogicHeadConstraint::AnimationNodeNotify( FBAnimationNode* pConnector,
     case moburiglogic::OutputKind::JointScaling:
     {
         if (!out.nodeS) return false;
-        double value[3] = {
-            1.0 + jointOutputs[base + 6u],
-            1.0 + jointOutputs[base + 7u],
-            1.0 + jointOutputs[base + 8u]
-        };
+        double value[3] = { 1.0 + delta[6], 1.0 + delta[7], 1.0 + delta[8] };
         out.nodeS->WriteData( value, pEvaluateInfo );
         return true;
     }

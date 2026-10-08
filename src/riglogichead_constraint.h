@@ -86,10 +86,11 @@ private:
         std::uint16_t    guiIndex;    // DNA GUI control 下标
         int              axis;        // 0=tx 1=ty 2=tz
     };
-    struct NeckInput {                // 颈部四元数：关节 Lcl Rotation
-        FBAnimationNode* node;
+    struct NeckInput {                // 颈部四元数：由全局旋转反推局部（HIK 激活时 Lcl 节点读到全局）
+        FBAnimationNode* node;        // 关节全局 Rotation
+        FBAnimationNode* parentNode;  // 父关节全局 Rotation；无父级时为空
         std::uint16_t    rawBase;
-        double           qCorr[4];
+        double           qNeutralInv[4];
     };
     struct JointOutput {
         FBAnimationNode* nodeT;

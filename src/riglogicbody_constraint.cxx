@@ -2,7 +2,7 @@
  * RigLogicBodyConstraint 实现（MotionBuilder 2024 + OpenRigLogic 静态库）
  *
  * 求值流程（每个 EvaluateInfo ID 只求解一次）：
- *   1. 读全部输入节点（驱动关节 Lcl 欧拉）→ 转四元数 → q_rel = qCorr * q_lcl
+ *   1. 读驱动关节及父级全局旋转 → q_rel = q中立⁻¹ * q父全局⁻¹ * q全局（锁外读取）
  *   2. setRawControl × 176 → rig->calculate(inst)
  *   3. 通知到的每个输出节点从 getJointOutputs() 取对应关节增量写出
  */
@@ -40,11 +40,11 @@ FBRegisterConstraint( RIGLOGICBODY__NAME,
 
 using moburiglogic::CollectModelsNs;
 using moburiglogic::ComposeJointRotation;
+using moburiglogic::DriverRelativeQuat;
 using moburiglogic::EulerDegToQuat;
 using moburiglogic::ExtractNamespace;
 using moburiglogic::NeedsNeutralCompose;
 using moburiglogic::QuatConj;
-using moburiglogic::QuatMul;
 
 /************************************************
  *  Creation
@@ -179,6 +179,7 @@ bool RigLogicBodyConstraint::BuildBindings( std::uint16_t lod )
     // ---- 输入：raw controls 按 <joint>.qx qy qz qw 四连排布 ----
     const std::uint16_t rawCount = mReader->getRawControlCount();
     std::vector<std::string> inputJointNames;
+    std::map<FBModel*, FBAnimationNode*> parentNodes;   // 多个驱动关节共用同一父级时只建一个节点
     for (std::uint16_t i = 0; i < rawCount; i += 4)
     {
         auto sv = mReader->getRawControlName( i );
@@ -194,21 +195,27 @@ bool RigLogicBodyConstraint::BuildBindings( std::uint16_t lod )
         FBModel* m = itModel->second;
         InputBinding ib;
         ib.rawBase = i;
-        // 输入节点：驱动关节的 Lcl Rotation（"Rotation" 是全局空间，实测坑）
-        ib.node = AnimationNodeOutCreate( 1000 + i, m, ANIMATIONNODE_TYPE_LOCAL_ROTATION );
+        // 输入节点：驱动关节与父级的全局 Rotation，局部在求值时反推。
+        // 不用 Lcl Rotation：HIK 激活时其输出节点读到的是全局旋转
+        ib.node = AnimationNodeOutCreate( 1000 + i, m, ANIMATIONNODE_TYPE_ROTATION );
+        ib.parentNode = nullptr;
+        if (FBModel* parent = m->Parent)
+        {
+            auto itParent = parentNodes.find( parent );
+            if (itParent == parentNodes.end())
+            {
+                const int parentUserId = 2000 + static_cast<int>( parentNodes.size() );
+                itParent = parentNodes.emplace(
+                    parent, AnimationNodeOutCreate( parentUserId, parent, ANIMATIONNODE_TYPE_ROTATION ) ).first;
+            }
+            ib.parentNode = itParent->second;
+        }
 
-        // qCorr = q(DNA中立)^-1 * q(PreRotation)
         auto nr = mReader->getNeutralJointRotation( itJoint->second );
         const double neutralE[3] = { nr.x, nr.y, nr.z };
-        double qNeutral[4], qNeutralInv[4];
+        double qNeutral[4];
         EulerDegToQuat( neutralE, qNeutral );
-        QuatConj( qNeutral, qNeutralInv );
-
-        FBVector3d pre = m->PreRotation;
-        const double preE[3] = { pre[0], pre[1], pre[2] };
-        double qPre[4];
-        EulerDegToQuat( preE, qPre );
-        QuatMul( qNeutralInv, qPre, ib.qCorr );
+        QuatConj( qNeutral, ib.qNeutralInv );
 
         mInputs.push_back( ib );
         inputJointNames.push_back( jname );
@@ -323,63 +330,79 @@ bool RigLogicBodyConstraint::AnimationNodeNotify( FBAnimationNode* pConnector,
                                                   FBEvaluateInfo* pEvaluateInfo,
                                                   FBConstraintInfo* pConstraintInfo )
 {
-    std::lock_guard<std::mutex> lock( mSolveMutex );
-    if (!mBindingsReady || !mRig || !mInst) return false;
+    // 锁只包住纯 RigLogic 计算与结果拷贝，不包 ReadData/WriteData：
+    // ReadData 可能触发上游（如 HIK 解算）求值并回到本约束，持锁读取会自锁死
+    const long evalId = pEvaluateInfo->GetEvaluationID();
+    bool needSolve;
+    {
+        std::lock_guard<std::mutex> lock( mSolveMutex );
+        if (!mBindingsReady || !mRig || !mInst) return false;
+        needSolve = ( evalId != mLastEvalId );
+    }
 
     // 每个求值 ID 只跑一次完整求解；后续输出节点直接取缓存结果
-    const long evalId = pEvaluateInfo->GetEvaluationID();
-    if (evalId != mLastEvalId)
+    if (needSolve)
     {
         const auto t0 = std::chrono::steady_clock::now();
-
-        for (const auto& ib : mInputs)
+        std::vector<double> rawQuats( mInputs.size() * 4u );
+        for (std::size_t inputIndex = 0; inputIndex < mInputs.size(); ++inputIndex)
         {
-            double e[3] = { 0, 0, 0 };
-            ib.node->ReadData( e, pEvaluateInfo );
-            double qLcl[4], qRel[4];
-            EulerDegToQuat( e, qLcl );
-            QuatMul( ib.qCorr, qLcl, qRel );
-            mInst->setRawControl( ib.rawBase + 0, static_cast<float>( qRel[0] ) );
-            mInst->setRawControl( ib.rawBase + 1, static_cast<float>( qRel[1] ) );
-            mInst->setRawControl( ib.rawBase + 2, static_cast<float>( qRel[2] ) );
-            mInst->setRawControl( ib.rawBase + 3, static_cast<float>( qRel[3] ) );
+            const auto& ib = mInputs[ inputIndex ];
+            double globalE[3] = { 0, 0, 0 }, parentE[3] = { 0, 0, 0 };
+            ib.node->ReadData( globalE, pEvaluateInfo );
+            if (ib.parentNode) ib.parentNode->ReadData( parentE, pEvaluateInfo );
+            DriverRelativeQuat( ib.qNeutralInv, parentE, globalE, &rawQuats[ inputIndex * 4u ] );
         }
-        mRig->calculate( mInst );
 
-        const auto t1 = std::chrono::steady_clock::now();
-        mLastSolveMs = std::chrono::duration<double, std::milli>( t1 - t0 ).count();
-        mLastEvalId = evalId;
+        std::lock_guard<std::mutex> lock( mSolveMutex );
+        if (!mBindingsReady || !mRig || !mInst) return false;
+        if (evalId != mLastEvalId)   // 并发时可能已被其他线程解完
+        {
+            for (std::size_t inputIndex = 0; inputIndex < mInputs.size(); ++inputIndex)
+            {
+                const std::uint16_t rawBase = mInputs[ inputIndex ].rawBase;
+                for (std::uint16_t k = 0; k < 4u; ++k)
+                    mInst->setRawControl( rawBase + k,
+                        static_cast<float>( rawQuats[ inputIndex * 4u + k ] ) );
+            }
+            mRig->calculate( mInst );
+            mLastSolveMs = std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - t0 ).count();
+            mLastEvalId = evalId;
+        }
     }
 
     const auto routeIt = mOutputRoutes.find( pConnector );
     if (routeIt == mOutputRoutes.end()) return false;
-    const auto& route = routeIt->second;
+    const auto route = routeIt->second;
     if (route.bindingIndex >= mOutputs.size()) return false;
-
     const auto& output = mOutputs[ route.bindingIndex ];
-    const auto jointOutputs = mInst->getJointOutputs();
-    const std::size_t base = static_cast<std::size_t>( output.jointIndex ) * 9u;
-    if (base + 9u > jointOutputs.size()) return false;
+
+    float delta[9];
+    {
+        std::lock_guard<std::mutex> lock( mSolveMutex );
+        if (!mInst) return false;
+        const auto jointOutputs = mInst->getJointOutputs();
+        const std::size_t base = static_cast<std::size_t>( output.jointIndex ) * 9u;
+        if (base + 9u > jointOutputs.size()) return false;
+        for (std::size_t k = 0; k < 9u; ++k) delta[k] = jointOutputs[base + k];
+    }
 
     switch (route.kind)
     {
     case moburiglogic::OutputKind::JointTranslation:
     {
         double value[3] = {
-            output.neutralT[0] + jointOutputs[base + 0u],
-            output.neutralT[1] + jointOutputs[base + 1u],
-            output.neutralT[2] + jointOutputs[base + 2u]
+            output.neutralT[0] + delta[0],
+            output.neutralT[1] + delta[1],
+            output.neutralT[2] + delta[2]
         };
         output.nodeT->WriteData( value, pEvaluateInfo );
         return true;
     }
     case moburiglogic::OutputKind::JointRotation:
     {
-        const double deltaEuler[3] = {
-            jointOutputs[base + 3u],
-            jointOutputs[base + 4u],
-            jointOutputs[base + 5u]
-        };
+        const double deltaEuler[3] = { delta[3], delta[4], delta[5] };
         double value[3];
         ComposeJointRotation( output.composeRot, output.qNeutral, deltaEuler, value );
         output.nodeR->WriteData( value, pEvaluateInfo );
@@ -387,11 +410,7 @@ bool RigLogicBodyConstraint::AnimationNodeNotify( FBAnimationNode* pConnector,
     }
     case moburiglogic::OutputKind::JointScaling:
     {
-        double value[3] = {
-            1.0 + jointOutputs[base + 6u],
-            1.0 + jointOutputs[base + 7u],
-            1.0 + jointOutputs[base + 8u]
-        };
+        double value[3] = { 1.0 + delta[6], 1.0 + delta[7], 1.0 + delta[8] };
         output.nodeS->WriteData( value, pEvaluateInfo );
         return true;
     }

@@ -68,6 +68,13 @@ foreach(content_var head_content body_content)
 endforeach()
 assert_contains("${body_content}" "ComposeJointRotation(" "Body neutral-compose rotation output")
 assert_contains("${head_content}" "ComposeJointRotation(" "Head neutral-compose rotation output")
+
+# HIK 激活时 Lcl Rotation 输出节点读到全局旋转：驱动输入必须由全局反推局部
+foreach(content_var head_content body_content)
+    assert_contains("${${content_var}}" "DriverRelativeQuat(" "global-to-local driver input in ${content_var}")
+    assert_not_contains("${${content_var}}" "ANIMATIONNODE_TYPE_LOCAL_ROTATION );\n\n        // qCorr" "Lcl Rotation driver input in ${content_var}")
+    assert_not_contains("${${content_var}}" "qCorr" "Lcl-based driver correction in ${content_var}")
+endforeach()
 assert_not_contains("${head_content}" "getJointVariableAttributeIndices( static_cast" "unsafe Head LOD query")
 assert_not_contains("${body_content}" "getJointVariableAttributeIndices( static_cast" "unsafe Body LOD query")
 assert_not_contains("${layout_content}" "Active = false" "Layout Active-off rebuild")

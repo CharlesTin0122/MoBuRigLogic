@@ -26,6 +26,7 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -69,6 +70,10 @@ public:
     FBPropertyInt     LodLevel;       //!< 驱动集 LOD（默认 0）
     FBPropertyDouble  LastSolveMs;    //!< 只读：上次求解耗时(ms)，性能观测
 
+    // [诊断·临时] HIK 激活时修形跳变排查
+    FBPropertyString  DebugInfo;      //!< 只读：上次求解各驱动关节 ReadData 读到的值与计数
+    FBPropertyBool    DebugNoCache;   //!< 1=每次 Notify 都重新求解（验证 EvaluationID 缓存假设）
+
     //--- Layout 查询接口
     bool   BindingsReady() const { return mBindingsReady; }
     size_t InputCount()    const { return mInputs.size(); }
@@ -85,6 +90,7 @@ private:
         FBAnimationNode* node;        // 驱动关节 Rotation 输入（Lcl 欧拉度）
         std::uint16_t    rawBase;     // raw control 基下标（qx）
         double           qCorr[4];    // q(DNA中立)^-1 * q(Pre) 预缓存 (x,y,z,w)
+        std::string      name;        // [诊断] 关节名
     };
     struct OutputBinding {
         FBAnimationNode* nodeT;       // 修形关节 Translation 输出
@@ -115,6 +121,14 @@ private:
     // 并行求值下多个输出节点可能在不同线程同时被通知：求解+读输出须串行
     std::mutex          mSolveMutex;
     std::atomic<double> mLastSolveMs { 0.0 };  // 求值线程只写这里，UI 空闲时同步到 LastSolveMs 属性
+
+    // [诊断·临时] 均在 mSolveMutex 下读写
+    struct DbgRead { double e[3]; bool ok; };
+    std::vector<DbgRead> mDbgReads;
+    std::set<long>       mDbgEvalIds;          // 本空闲窗口内出现过的 EvaluationID
+    std::size_t          mDbgNotifies = 0;
+    std::size_t          mDbgSolves   = 0;
+    bool                 mDbgNoCache  = false; // DebugNoCache 的求值线程副本
 
     int  mGroupSkeleton = -1;         // Reference Group: 骨架根（挂 pelvis/root 均可）
     long mLastEvalId    = -1;         // 每求值ID只求解一次（多输出节点共享结果）

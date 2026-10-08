@@ -22,6 +22,7 @@
 
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <map>
 #include <mutex>
 
@@ -55,8 +56,11 @@ bool RigLogicBodyConstraint::FBCreate()
     FBPropertyPublish( this, DnaPath,     "DNA Path",      nullptr, nullptr );
     FBPropertyPublish( this, LodLevel,    "LOD Level",     nullptr, nullptr );
     FBPropertyPublish( this, LastSolveMs, "Last Solve Ms", nullptr, nullptr );
+    FBPropertyPublish( this, DebugInfo,    "Debug Info",     nullptr, nullptr );
+    FBPropertyPublish( this, DebugNoCache, "Debug No Cache", nullptr, nullptr );
     LodLevel = 0;
     LastSolveMs = 0.0;
+    DebugNoCache = false;
 
     // 引用组：把骨架根（root/pelvis 所在层级任意节点）拖进来
     mGroupSkeleton = ReferenceGroupAdd( "Skeleton Root", 1 );
@@ -72,6 +76,34 @@ void RigLogicBodyConstraint::EventUIIdle( HISender, HKEvent )
 {
     const double ms = mLastSolveMs.load();
     if ((double)LastSolveMs != ms) LastSolveMs = ms;
+
+    // [诊断·临时] 汇总上个空闲窗口的求值情况
+    {
+        std::string info;
+        {
+            std::lock_guard<std::mutex> lock( mSolveMutex );
+            mDbgNoCache = static_cast<bool>( DebugNoCache );
+            if (mDbgNotifies > 0)
+            {
+                char head[160];
+                std::snprintf( head, sizeof(head), "notifies=%zu solves=%zu evalIds=%zu lastEval=%ld|",
+                               mDbgNotifies, mDbgSolves, mDbgEvalIds.size(), mLastEvalId );
+                info = head;
+                for (std::size_t i = 0; i < mDbgReads.size() && i < mInputs.size(); ++i)
+                {
+                    char item[96];
+                    const auto& d = mDbgReads[i];
+                    std::snprintf( item, sizeof(item), "%s:%.4f,%.4f,%.4f,%d;",
+                                   mInputs[i].name.c_str(), d.e[0], d.e[1], d.e[2], d.ok ? 1 : 0 );
+                    info += item;
+                }
+                mDbgNotifies = 0;
+                mDbgSolves = 0;
+                mDbgEvalIds.clear();
+            }
+        }
+        if (!info.empty()) DebugInfo = info.c_str();
+    }
 
     // LOD 改动即时生效：驱动集/BS 映射随 LOD 变化，需重建绑定（不止 setLOD）。
     // 先记下目标 LOD 再重建，重建失败也不会每个空闲周期反复重试
@@ -194,6 +226,7 @@ bool RigLogicBodyConstraint::BuildBindings( std::uint16_t lod )
         FBModel* m = itModel->second;
         InputBinding ib;
         ib.rawBase = i;
+        ib.name = jname;
         // 输入节点：驱动关节的 Lcl Rotation（"Rotation" 是全局空间，实测坑）
         ib.node = AnimationNodeOutCreate( 1000 + i, m, ANIMATIONNODE_TYPE_LOCAL_ROTATION );
 
@@ -328,14 +361,20 @@ bool RigLogicBodyConstraint::AnimationNodeNotify( FBAnimationNode* pConnector,
 
     // 每个求值 ID 只跑一次完整求解；后续输出节点直接取缓存结果
     const long evalId = pEvaluateInfo->GetEvaluationID();
-    if (evalId != mLastEvalId)
+    ++mDbgNotifies;                                   // [诊断]
+    mDbgEvalIds.insert( evalId );                     // [诊断]
+    if (evalId != mLastEvalId || mDbgNoCache)
     {
         const auto t0 = std::chrono::steady_clock::now();
+        ++mDbgSolves;                                 // [诊断]
+        mDbgReads.resize( mInputs.size() );           // [诊断]
 
-        for (const auto& ib : mInputs)
+        for (std::size_t inputIndex = 0; inputIndex < mInputs.size(); ++inputIndex)
         {
+            const auto& ib = mInputs[ inputIndex ];
             double e[3] = { 0, 0, 0 };
-            ib.node->ReadData( e, pEvaluateInfo );
+            const bool readOk = ib.node->ReadData( e, pEvaluateInfo );
+            mDbgReads[ inputIndex ] = { { e[0], e[1], e[2] }, readOk };   // [诊断]
             double qLcl[4], qRel[4];
             EulerDegToQuat( e, qLcl );
             QuatMul( ib.qCorr, qLcl, qRel );

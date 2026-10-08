@@ -128,7 +128,15 @@ bool RigLogicHeadConstraint::FBCreate()
     mGroupSkeleton = ReferenceGroupAdd( "Skeleton Root", 1 );
     Deformer = false;
     HasLayout = true;
+    FBSystem().OnUIIdle.Add( this, (FBCallback)&RigLogicHeadConstraint::EventUIIdle );
     return true;
+}
+
+// 求值线程只写 mLastSolveMs 原子量；属性写入会触发通知，必须回到主线程
+void RigLogicHeadConstraint::EventUIIdle( HISender, HKEvent )
+{
+    const double ms = mLastSolveMs.load();
+    if ((double)LastSolveMs != ms) LastSolveMs = ms;
 }
 
 void RigLogicHeadConstraint::ZeroAllExpressions()
@@ -142,6 +150,7 @@ void RigLogicHeadConstraint::ZeroAllExpressions()
 
 void RigLogicHeadConstraint::FBDestroy()
 {
+    FBSystem().OnUIIdle.Remove( this, (FBCallback)&RigLogicHeadConstraint::EventUIIdle );
     ReleaseDna();
 }
 

@@ -55,6 +55,8 @@ assert_contains("${head_content}" "std::lock_guard<std::mutex> lock( mSolveMutex
 assert_contains("${body_content}" "std::lock_guard<std::mutex> lock( mSolveMutex )" "Body solve serialization")
 assert_not_contains("${head_content}" "        LastSolveMs =" "Head property write on evaluation thread")
 assert_not_contains("${body_content}" "        LastSolveMs =" "Body property write on evaluation thread")
+assert_contains("${head_content}" "RigLogicHeadConstraint::EventUIIdle" "Head solve-time sync on main thread")
+assert_contains("${body_content}" "RigLogicBodyConstraint::EventUIIdle" "Body solve-time sync on main thread")
 assert_not_contains("${head_content}" "getJointVariableAttributeIndices( static_cast" "unsafe Head LOD query")
 assert_not_contains("${body_content}" "getJointVariableAttributeIndices( static_cast" "unsafe Body LOD query")
 assert_not_contains("${layout_content}" "Active = false" "Layout Active-off rebuild")

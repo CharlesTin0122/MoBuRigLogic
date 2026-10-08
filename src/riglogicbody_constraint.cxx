@@ -133,11 +133,20 @@ bool RigLogicBodyConstraint::FBCreate()
 
     Deformer = false;
     HasLayout = true;
+    FBSystem().OnUIIdle.Add( this, (FBCallback)&RigLogicBodyConstraint::EventUIIdle );
     return true;
+}
+
+// 求值线程只写 mLastSolveMs 原子量；属性写入会触发通知，必须回到主线程
+void RigLogicBodyConstraint::EventUIIdle( HISender, HKEvent )
+{
+    const double ms = mLastSolveMs.load();
+    if ((double)LastSolveMs != ms) LastSolveMs = ms;
 }
 
 void RigLogicBodyConstraint::FBDestroy()
 {
+    FBSystem().OnUIIdle.Remove( this, (FBCallback)&RigLogicBodyConstraint::EventUIIdle );
     ReleaseDna();
 }
 

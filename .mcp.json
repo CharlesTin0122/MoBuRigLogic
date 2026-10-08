@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "maya-mcp": {
+      "type": "stdio",
+      "command": "C:/Users/dalaotian/Documents/maya/scripts/mayaMCP/mayaMcpServer/maya_mcp_server.exe",
+      "args": [],
+      "env": {}
+    }
+  }
+}

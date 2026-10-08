@@ -20,17 +20,6 @@ void SetIfChanged( FBLabel& label, const char* text, char* cache, size_t cacheSi
         label.Caption = text;
     }
 }
-
-// 求值线程只写原子成员；属性写入（会触发通知）放在 UI 主线程
-template <typename Constraint>
-void SyncLastSolveMs( Constraint* constraint )
-{
-    const double ms = constraint->LastSolveMilliseconds();
-    if ((double)constraint->LastSolveMs != ms)
-    {
-        constraint->LastSolveMs = ms;
-    }
-}
 } // namespace
 
 // ================================================================= Head
@@ -184,7 +173,6 @@ void RigLogicHeadLayout::EventIdle( HISender, HKEvent )
     // 节流：约每 60 个空闲周期刷一次（状态文本无变化时 SetIfChanged 零开销）
     if (++mIdleCounter < 60) return;
     mIdleCounter = 0;
-    SyncLastSolveMs( mConstraint );
     RefreshStatus();
 }
 
@@ -324,7 +312,6 @@ void RigLogicBodyLayout::EventIdle( HISender, HKEvent )
 {
     if (++mIdleCounter < 60) return;
     mIdleCounter = 0;
-    SyncLastSolveMs( mConstraint );
     RefreshStatus();
 }
 

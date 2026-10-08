@@ -73,6 +73,9 @@ public:
     bool   RebuildBindings();
     void   ZeroAllExpressions();   //!< 全部表情属性归零（表情属性模式用）
 
+    //! UI 空闲回调：把求值线程记录的耗时同步到 LastSolveMs 属性（主线程写）
+    void   EventUIIdle( HISender pSender, HKEvent pEvent );
+
 private:
     struct ExprInput {                // 表情控制：约束上的可K帧属性
         FBProperty*   prop;

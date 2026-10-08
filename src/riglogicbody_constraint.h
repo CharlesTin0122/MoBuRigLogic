@@ -76,6 +76,9 @@ public:
     double LastSolveMilliseconds() const { return mLastSolveMs.load(); }
     bool   RebuildBindings();
 
+    //! UI 空闲回调：把求值线程记录的耗时同步到 LastSolveMs 属性（主线程写）
+    void   EventUIIdle( HISender pSender, HKEvent pEvent );
+
 private:
     struct InputBinding {
         FBAnimationNode* node;        // 驱动关节 Rotation 输入（Lcl 欧拉度）

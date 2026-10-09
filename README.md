@@ -246,7 +246,10 @@ ctest --test-dir build -C Release --output-on-failure
 6. 勾选约束的 `Active`。
 7. 单击 `Rebuild Bindings`，或在 DNA、LOD、输入模式、角色引用发生变化后重新绑定。
 8. 检查状态区中的 expression、panel control、neck joint、joint output 和 BlendShape 数量。
-9. 表情属性模式下，可单击 `Zero Expressions` 将全部动态表情属性归零。
+9. 单击 `Zero Expressions` 可让面部表情回到中立位（可用 Ctrl+Z 撤销）：
+   - FaceBoard 面板：DNA 读取的全部表情控制器（`CTRL_C_jaw` 等）位移归零。面板框控制器 `CTRL_faceGUI`、`CTRL_faceAndEyesAimFollowHeadGUI`、`CTRL_faceTweakersGUI` 及开关类控制器不被 DNA 读取，不会移动。
+   - 表情属性模式：约束上的全部表情属性归零。
+   - 控制器若已有关键帧，归零只改当前值，切换帧后会被关键帧覆盖；需要保留请手动 K 帧。
 
 如果使用 FaceBoard 模式，GUI 控制器不一定是 `head` 的子节点。插件会在相同角色 namespace 内继续查找对应控制器。
 

@@ -207,5 +207,21 @@ int main()
     CHECK( ExtractNamespacePrefix( "A:B:head", "head" ) == "A:B:" );
     CHECK( ExtractNamespacePrefix( "pelvis", "pelvis" ).empty() );
     CHECK( ExtractNamespacePrefix( "Char01:pelvis_x", "pelvis" ).empty() );
+
+    // ---- Zero Expressions：GUI 控制名 → 控制器模型（去重、保序）----
+    {
+        const std::vector<std::string> guiNames {
+            "CTRL_C_jaw.ty", "CTRL_C_jaw.tx", "CTRL_L_brow_down.ty",
+            "CTRL_C_eye.tx", "CTRL_C_eye.ty", "noAxis", ".ty"
+        };
+        const auto models = GuiControlModelNames( guiNames );
+        CHECK( models.size() == 3 );
+        CHECK( models[0] == "CTRL_C_jaw" );
+        CHECK( models[1] == "CTRL_L_brow_down" );
+        CHECK( models[2] == "CTRL_C_eye" );
+        for (const auto& m : models)   // 面板框不由 DNA 读取，不应出现
+            CHECK( m != "CTRL_faceGUI" && m != "CTRL_faceAndEyesAimFollowHeadGUI"
+                && m != "CTRL_faceTweakersGUI" );
+    }
     return 0;
 }

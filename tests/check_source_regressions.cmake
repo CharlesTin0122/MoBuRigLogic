@@ -69,6 +69,12 @@ endforeach()
 assert_contains("${body_content}" "ComposeJointRotation(" "Body neutral-compose rotation output")
 assert_contains("${head_content}" "ComposeJointRotation(" "Head neutral-compose rotation output")
 
+# Zero Expressions：按 DNA GUI 控制器归零面板，并可撤销
+assert_contains("${layout_content}" "ZeroFaceControls()" "Zero Expressions button resets face controls")
+assert_contains("${head_content}" "GuiControlModelNames(" "Zero Expressions uses DNA GUI controls")
+assert_contains("${head_content}" "TransactionAddModelTRS(" "Zero Expressions is undoable")
+assert_not_contains("${head_content}" "ZeroAllExpressions" "legacy expression-only zero")
+
 # HIK 激活时 Lcl Rotation 输出节点读到全局旋转：驱动输入必须由全局反推局部
 foreach(content_var head_content body_content)
     assert_contains("${${content_var}}" "DriverRelativeQuat(" "global-to-local driver input in ${content_var}")

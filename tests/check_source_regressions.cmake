@@ -75,6 +75,11 @@ assert_contains("${head_content}" "GuiControlModelNames(" "Zero Expressions uses
 assert_contains("${head_content}" "TransactionAddModelTRS(" "Zero Expressions is undoable")
 assert_not_contains("${head_content}" "ZeroAllExpressions" "legacy expression-only zero")
 
+# Lock Panel Frames：FRM_* 不可选中，属性可保存、可脚本设置
+assert_contains("${head_content}" [=["Lock Panel Frames"]=] "Lock Panel Frames property")
+assert_contains("${head_content}" "Pickable = !locked" "FRM_* selection toggle")
+assert_contains("${layout_content}" "SetPanelFramesLocked(" "Lock Panel Frames checkbox")
+
 # HIK 激活时 Lcl Rotation 输出节点读到全局旋转：驱动输入必须由全局反推局部
 foreach(content_var head_content body_content)
     assert_contains("${${content_var}}" "DriverRelativeQuat(" "global-to-local driver input in ${content_var}")

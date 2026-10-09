@@ -85,6 +85,11 @@ void RigLogicHeadLayout::UICreate()
                0,    kFBAttachTop,    "ButtonRebuild", 1.0,
                110,  kFBAttachNone,   nullptr,         1.0,
                lH,   kFBAttachNone,   nullptr,         1.0 );
+    AddRegion( "ButtonLockFrames", "ButtonLockFrames",
+               lS * 2, kFBAttachRight, "ButtonZero",   1.0,
+               0,    kFBAttachTop,    "ButtonZero",    1.0,
+               150,  kFBAttachNone,   nullptr,         1.0,
+               lH,   kFBAttachNone,   nullptr,         1.0 );
 
     AddRegion( "LabelStatus", "LabelStatus",
                lS,   kFBAttachLeft,   "",              1.0,
@@ -99,6 +104,7 @@ void RigLogicHeadLayout::UICreate()
     SetControl( "ListMode",      mListMode );
     SetControl( "ButtonRebuild", mButtonRebuild );
     SetControl( "ButtonZero",    mButtonZero );
+    SetControl( "ButtonLockFrames", mButtonLockFrames );
     SetControl( "LabelStatus",   mLabelStatus );
 }
 
@@ -120,6 +126,11 @@ void RigLogicHeadLayout::UIConfigure()
     mButtonRebuild.OnClick.Add( this, (FBCallback)&RigLogicHeadLayout::EventRebuild );
     mButtonZero.Caption = "Zero Expressions";
     mButtonZero.OnClick.Add( this, (FBCallback)&RigLogicHeadLayout::EventZeroAll );
+
+    mButtonLockFrames.Caption = "Lock Panel Frames";
+    mButtonLockFrames.Style = kFBCheckbox;
+    mButtonLockFrames.State = static_cast<bool>( mConstraint->LockPanelFrames ) ? 1 : 0;
+    mButtonLockFrames.OnClick.Add( this, (FBCallback)&RigLogicHeadLayout::EventLockFrames );
 
     mLabelStatus.WordWrap = true;
 }
@@ -174,6 +185,10 @@ void RigLogicHeadLayout::EventIdle( HISender, HKEvent )
     if (++mIdleCounter < 60) return;
     mIdleCounter = 0;
     RefreshStatus();
+
+    // 属性被 Python/属性面板改动时同步复选框
+    const int lockState = static_cast<bool>( mConstraint->LockPanelFrames ) ? 1 : 0;
+    if ((int)mButtonLockFrames.State != lockState) mButtonLockFrames.State = lockState;
 }
 
 void RigLogicHeadLayout::EventBrowse( HISender, HKEvent )
@@ -208,6 +223,11 @@ void RigLogicHeadLayout::EventZeroAll( HISender, HKEvent )
     mConstraint->ZeroFaceControls();
     FBSystem().Scene->Evaluate();
     RefreshStatus();
+}
+
+void RigLogicHeadLayout::EventLockFrames( HISender, HKEvent )
+{
+    mConstraint->SetPanelFramesLocked( (int)mButtonLockFrames.State == 1 );
 }
 
 // ================================================================= Body

@@ -11,6 +11,8 @@
 #include "riglogic_common.h"
 #include "riglogic_scene.h"
 
+#include <fbsdk/fbundomanager.h>
+
 #include <dna/BinaryStreamReader.h>
 #include <dna/Configuration.h>
 #include <riglogic/riglogic/RigLogic.h>
@@ -76,13 +78,59 @@ void RigLogicHeadConstraint::EventUIIdle( HISender, HKEvent )
     }
 }
 
-void RigLogicHeadConstraint::ZeroAllExpressions()
+// 面部表情回到中立（Zero Expressions 按钮）：
+//   - FaceBoard 面板：DNA 读取的全部 GUI 控制器（CTRL_C_jaw 等）位移归零。
+//     控制器集合取自 DNA，面板框（CTRL_faceGUI / CTRL_faceAndEyesAimFollowHeadGUI /
+//     CTRL_faceTweakersGUI）及开关类 CTRL_* 不被 DNA 读取，因此不会被移动
+//   - 表情属性模式：约束上的表情属性归零
+// 两种模式都处理，切换输入模式后也能一键回中立；整体为一次可撤销操作
+void RigLogicHeadConstraint::ZeroFaceControls()
 {
+    std::vector<FBModel*> controls;
+    if (mReader)
+    {
+        std::vector<std::string> guiNames;
+        const std::uint16_t guiCount = mReader->getGUIControlCount();
+        guiNames.reserve( guiCount );
+        for (std::uint16_t g = 0; g < guiCount; ++g)
+        {
+            auto sv = mReader->getGUIControlName( g );
+            guiNames.emplace_back( sv.data(), sv.size() );
+        }
+
+        // 与绑定一致：按骨架根所属 namespace 查找，多角色场景只动本角色的面板
+        FBModel* skelRoot = (FBModel*)ReferenceGet( mGroupSkeleton, 0 );
+        const std::string ns = skelRoot ? ExtractNamespace( skelRoot ) : std::string();
+        std::map<std::string, FBModel*> models;
+        FBSystem lSystem;
+        if (lSystem.Scene && lSystem.Scene->RootModel)
+            CollectModelsNs( lSystem.Scene->RootModel, ns, models );
+
+        for (const auto& name : moburiglogic::GuiControlModelNames( guiNames ))
+        {
+            auto it = models.find( name );
+            if (it != models.end()) controls.push_back( it->second );
+        }
+    }
+
+    FBUndoManager& undo = FBUndoManager::TheOne();
+    const bool ownTransaction = !undo.TransactionIsOpen()
+                             && undo.TransactionBegin( "RigLogic Zero Expressions" );
+    for (FBModel* control : controls)
+    {
+        undo.TransactionAddModelTRS( control );
+        control->Translation = FBVector3d( 0.0, 0.0, 0.0 );
+    }
     for (const auto& ei : mExprInputs)
     {
+        undo.TransactionAddProperty( ei.prop );
         double v = 0.0;
         ei.prop->SetData( &v );
     }
+    if (ownTransaction) undo.TransactionEnd();
+
+    FBTrace( "[RigLogicHead] Zero Expressions: %zu panel controls, %zu expression properties\n",
+             controls.size(), mExprInputs.size() );
 }
 
 void RigLogicHeadConstraint::FBDestroy()

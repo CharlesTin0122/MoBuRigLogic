@@ -105,6 +105,26 @@ inline std::string ExtractNamespacePrefix( const std::string& longName,
     return std::string();
 }
 
+// DNA GUI 控制名 "CTRL_C_jaw.ty" → 控制器模型名 "CTRL_C_jaw"（去重、保持首次出现顺序）。
+// 只含 DNA 实际读取的表情控制器：面板框（CTRL_faceGUI 等）、开关类控制器天然不在其中
+template <typename NameRange>
+std::vector<std::string> GuiControlModelNames( const NameRange& guiControlNames )
+{
+    std::vector<std::string> result;
+    for (const auto& guiName : guiControlNames)
+    {
+        const std::string name( guiName );
+        const auto dot = name.rfind( '.' );
+        if (dot == std::string::npos || dot == 0) continue;
+        std::string model = name.substr( 0, dot );
+        bool seen = false;
+        for (const auto& existing : result)
+            if (existing == model) { seen = true; break; }
+        if (!seen) result.push_back( std::move( model ) );
+    }
+    return result;
+}
+
 inline std::uint16_t ClampLod( int requestedLod, std::uint16_t lodCount )
 {
     if (lodCount == 0 || requestedLod <= 0) {

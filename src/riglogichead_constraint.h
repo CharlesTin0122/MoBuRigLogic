@@ -71,7 +71,7 @@ public:
     bool   DnaLoaded()     const { return mRig != nullptr; }
     double LastSolveMilliseconds() const { return mLastSolveMs.load(); }
     bool   RebuildBindings();
-    void   ZeroAllExpressions();   //!< 全部表情属性归零（表情属性模式用）
+    void   ZeroFaceControls();     //!< 面部表情回到中立：面板控制器位移 + 表情属性全部归零（可撤销）
 
     //! UI 空闲回调：把求值线程记录的耗时同步到 LastSolveMs 属性（主线程写）
     void   EventUIIdle( HISender pSender, HKEvent pEvent );

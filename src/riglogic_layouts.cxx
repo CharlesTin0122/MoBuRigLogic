@@ -205,7 +205,7 @@ void RigLogicHeadLayout::EventRebuild( HISender, HKEvent )
 
 void RigLogicHeadLayout::EventZeroAll( HISender, HKEvent )
 {
-    mConstraint->ZeroAllExpressions();
+    mConstraint->ZeroFaceControls();
     FBSystem().Scene->Evaluate();
     RefreshStatus();
 }

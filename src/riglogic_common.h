@@ -105,6 +105,12 @@ inline std::string ExtractNamespacePrefix( const std::string& longName,
     return std::string();
 }
 
+// FaceBoard 面板的框/背景模型（FRM_*）：锁定后不可在视图中选中，方便选 CTRL_* 控制器
+inline bool IsPanelFrameName( const std::string& name )
+{
+    return name.size() > 4 && name.compare( 0, 4, "FRM_" ) == 0;
+}
+
 // DNA GUI 控制名 "CTRL_C_jaw.ty" → 控制器模型名 "CTRL_C_jaw"（去重、保持首次出现顺序）。
 // 只含 DNA 实际读取的表情控制器：面板框（CTRL_faceGUI 等）、开关类控制器天然不在其中
 template <typename NameRange>

@@ -223,5 +223,13 @@ int main()
             CHECK( m != "CTRL_faceGUI" && m != "CTRL_faceAndEyesAimFollowHeadGUI"
                 && m != "CTRL_faceTweakersGUI" );
     }
+
+    // ---- Lock Panel Frames：只锁 FRM_* ----
+    CHECK( IsPanelFrameName( "FRM_faceGUI" ) );
+    CHECK( IsPanelFrameName( "FRM_C_jaw" ) );
+    CHECK( !IsPanelFrameName( "FRM_" ) );
+    CHECK( !IsPanelFrameName( "CTRL_C_jaw" ) );
+    CHECK( !IsPanelFrameName( "GRP_FRM_x" ) );
+    CHECK( !IsPanelFrameName( "frm_faceGUI" ) );
     return 0;
 }

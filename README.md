@@ -250,6 +250,7 @@ ctest --test-dir build -C Release --output-on-failure
    - FaceBoard 面板：DNA 读取的全部表情控制器（`CTRL_C_jaw` 等）位移归零。面板框控制器 `CTRL_faceGUI`、`CTRL_faceAndEyesAimFollowHeadGUI`、`CTRL_faceTweakersGUI` 及开关类控制器不被 DNA 读取，不会移动。
    - 表情属性模式：约束上的全部表情属性归零。
    - 控制器若已有关键帧，归零只改当前值，切换帧后会被关键帧覆盖；需要保留请手动 K 帧。
+10. 勾选 `Lock Panel Frames` 可让 FaceBoard 面板的框模型（`FRM_*`）不可在视图中选中（即关闭 Enable Selection），方便动画师点选 `CTRL_*` 控制器；需要调整面板时取消勾选即可恢复。只作用于本角色 namespace，状态随场景保存，也可用 Python 设置约束属性 `Lock Panel Frames`。
 
 如果使用 FaceBoard 模式，GUI 控制器不一定是 `head` 的子节点。插件会在相同角色 namespace 内继续查找对应控制器。
 

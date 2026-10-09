@@ -51,9 +51,11 @@ bool RigLogicHeadConstraint::FBCreate()
     FBPropertyPublish( this, LodLevel,    "LOD Level",     nullptr, nullptr );
     FBPropertyPublish( this, InputMode,   "Input Mode",    nullptr, nullptr );
     FBPropertyPublish( this, LastSolveMs, "Last Solve Ms", nullptr, nullptr );
+    FBPropertyPublish( this, LockPanelFrames, "Lock Panel Frames", nullptr, nullptr );
     LodLevel = 0;
     InputMode = 0;   // 0=表情属性 1=FaceBoard面板
     LastSolveMs = 0.0;
+    LockPanelFrames = false;
 
     mGroupSkeleton = ReferenceGroupAdd( "Skeleton Root", 1 );
     Deformer = false;
@@ -76,6 +78,51 @@ void RigLogicHeadConstraint::EventUIIdle( HISender, HKEvent )
         mAppliedLod = lod;
         RebuildBindings();
     }
+
+    // Lock Panel Frames 改动（Python/属性面板设置）即时生效。首个空闲周期只记录当前值：
+    // FRM_* 的可选状态本身随 FBX 保存，打开场景时不覆盖用户手动改过的状态
+    const int frameLock = static_cast<bool>( LockPanelFrames ) ? 1 : 0;
+    if (mAppliedFrameLock < 0)
+    {
+        mAppliedFrameLock = frameLock;
+    }
+    else if (frameLock != mAppliedFrameLock)
+    {
+        mAppliedFrameLock = frameLock;
+        ApplyPanelFramesLock( frameLock == 1 );
+    }
+}
+
+void RigLogicHeadConstraint::SetPanelFramesLocked( bool locked )
+{
+    LockPanelFrames = locked;
+    mAppliedFrameLock = locked ? 1 : 0;   // 已在此应用，空闲回调不再重复
+    ApplyPanelFramesLock( locked );
+}
+
+std::map<std::string, FBModel*> RigLogicHeadConstraint::CollectCharacterModels()
+{
+    // 与绑定一致：按骨架根所属 namespace 查找，多角色场景只处理本角色的面板
+    FBModel* skelRoot = (FBModel*)ReferenceGet( mGroupSkeleton, 0 );
+    const std::string ns = skelRoot ? ExtractNamespace( skelRoot ) : std::string();
+    std::map<std::string, FBModel*> models;
+    FBSystem lSystem;
+    if (lSystem.Scene && lSystem.Scene->RootModel)
+        CollectModelsNs( lSystem.Scene->RootModel, ns, models );
+    return models;
+}
+
+std::size_t RigLogicHeadConstraint::ApplyPanelFramesLock( bool locked )
+{
+    std::size_t count = 0;
+    for (const auto& kv : CollectCharacterModels())
+    {
+        if (!moburiglogic::IsPanelFrameName( kv.first )) continue;
+        kv.second->Pickable = !locked;
+        ++count;
+    }
+    FBTrace( "[RigLogicHead] Lock Panel Frames=%d: %zu FRM_* models\n", locked ? 1 : 0, count );
+    return count;
 }
 
 // 面部表情回到中立（Zero Expressions 按钮）：
@@ -99,12 +146,7 @@ void RigLogicHeadConstraint::ZeroFaceControls()
         }
 
         // 与绑定一致：按骨架根所属 namespace 查找，多角色场景只动本角色的面板
-        FBModel* skelRoot = (FBModel*)ReferenceGet( mGroupSkeleton, 0 );
-        const std::string ns = skelRoot ? ExtractNamespace( skelRoot ) : std::string();
-        std::map<std::string, FBModel*> models;
-        FBSystem lSystem;
-        if (lSystem.Scene && lSystem.Scene->RootModel)
-            CollectModelsNs( lSystem.Scene->RootModel, ns, models );
+        const auto models = CollectCharacterModels();
 
         for (const auto& name : moburiglogic::GuiControlModelNames( guiNames ))
         {

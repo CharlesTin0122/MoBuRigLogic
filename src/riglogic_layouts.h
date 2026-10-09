@@ -3,7 +3,7 @@
 /**
  * RigLogic 约束的自定义 Layout（属性面板 UI）
  *
- * HeadLayout:  DNA 浏览按钮 / 输入模式下拉 / 绑定状态区 / 归零+诊断按钮
+ * HeadLayout:  DNA 浏览按钮 / 输入模式下拉 / 绑定状态区 / 归零按钮 / 锁定面板框复选框
  * BodyLayout:  DNA 浏览按钮 / 绑定状态区
  */
 
@@ -31,6 +31,7 @@ private:
     void EventModeChange( HISender pSender, HKEvent pEvent );
     void EventRebuild  ( HISender pSender, HKEvent pEvent );
     void EventZeroAll  ( HISender pSender, HKEvent pEvent );
+    void EventLockFrames( HISender pSender, HKEvent pEvent );
     void EventIdle     ( HISender pSender, HKEvent pEvent );
 
     RigLogicHeadConstraint* mConstraint = nullptr;
@@ -45,6 +46,7 @@ private:
     FBLabel   mLabelStatus;
     FBButton  mButtonRebuild;
     FBButton  mButtonZero;
+    FBButton  mButtonLockFrames;   // 复选框：面板 FRM_* 不可选中
 };
 
 //! Body 约束面板

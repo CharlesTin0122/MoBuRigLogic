@@ -1,0 +1,15 @@
+# 二进制文件：禁止行尾转换与文本 diff
+#
+# 本仓库 core.autocrlf=true。若 dist/ 下的插件 DLL 被当作文本处理，
+# 行尾转换会直接破坏其二进制内容，导致 MotionBuilder 无法加载插件。
+# 这里显式声明，不依赖 Git 的自动二进制探测（探测通常可靠，但一旦误判
+# 后果是插件完全不可用，故显式固定）。
+#
+# 注意：此处刻意不声明 *.md / *.cxx 等文本文件的 eol，避免改变仓库中
+# 既有文件的行尾规范化行为。
+*.dll binary
+*.lib binary
+*.exe binary
+*.pdb binary
+*.exp binary
+*.dna binary

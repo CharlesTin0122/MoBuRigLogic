@@ -73,6 +73,14 @@ inline bool LoadRigRuntime( const char* path, RigRuntime& rt )
     return true;
 }
 
+// 当前场景（绑定 FBX）的完整路径；新建且未存盘时为空串。
+// 用于定位 DNA 兜底目录：DNA 加载失败时找 FBX 旁边的固定文件名
+inline std::string SceneFilePath()
+{
+    const char* path = FBApplication().FBXFileName.AsString();
+    return path ? std::string( path ) : std::string();
+}
+
 // 提取模型的 namespace 前缀（"Char01:pelvis" → "Char01:"；无则空串）
 inline std::string ExtractNamespace( FBModel* m )
 {

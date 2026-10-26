@@ -75,6 +75,9 @@ public:
     size_t OutputCount()   const { return mOutputs.size(); }
     bool   DnaLoaded()     const { return mRig != nullptr; }
     double LastSolveMilliseconds() const { return mLastSolveMs.load(); }
+    bool   DnaFromSceneFolder() const { return mDnaFromSceneFolder; }  //!< DNA 来自 FBX 同目录兜底
+    int    MissingBindings()    const { return mMissingBindings; }      //!< 未在场景中找到的 DNA 关节数
+    const std::string& ResolvedDnaPath() const { return mLoadedDnaPath; } //!< 实际加载的 DNA 文件
     bool   RebuildBindings();
 
     //! UI 空闲回调：把求值线程记录的耗时同步到 LastSolveMs 属性（主线程写）
@@ -107,7 +110,9 @@ private:
     trio::FileStream*        mStream  = nullptr;
     rl4::RigLogic*           mRig     = nullptr;
     rl4::RigInstance*        mInst    = nullptr;
-    std::string              mLoadedDnaPath;   // 已加载路径（换 DNA 检测）
+    std::string              mLoadedDnaPath;   // 实际加载的 DNA 文件路径（可能是兜底路径）
+    std::string              mLoadedDnaPropertyPath; // 加载时的 DnaPath 属性值（换 DNA 检测）
+    std::string              mDnaRetryKey;     // 兜底懒重试去重键（场景路径|属性路径）
 
     std::vector<InputBinding>  mInputs;
     std::vector<OutputBinding> mOutputs;
@@ -121,6 +126,8 @@ private:
     long mLastEvalId    = -1;         // 每求值ID只求解一次（多输出节点共享结果）
     int  mAppliedLod    = -1;         // 当前绑定所用 LOD；UI 空闲时与 LodLevel 比对，变了即重建
     bool mBindingsReady = false;
+    bool mDnaFromSceneFolder = false;  // true=使用了 FBX 同目录的 body.dna
+    int  mMissingBindings = 0;         // 上次 BuildBindings 里未找到的 DNA 关节数（只告警）
 };
 
 #endif /* __RIGLOGIC_BODY_CONSTRAINT_H__ */

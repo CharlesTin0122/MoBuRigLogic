@@ -9,6 +9,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <string>
 
 namespace {
 // 状态文本变化时才写 Caption（避免每秒重绘闪烁）
@@ -19,6 +20,20 @@ void SetIfChanged( FBLabel& label, const char* text, char* cache, size_t cacheSi
         std::snprintf( cache, cacheSize, "%s", text );
         label.Caption = text;
     }
+}
+
+// DNA 来源行：回退到 FBX 同目录时明确标出，避免动画师误以为是公司路径的 DNA
+std::string DnaSourceLine( const std::string& resolvedPath, bool fromSceneFolder )
+{
+    if (!fromSceneFolder) return std::string();
+    return "\nDNA: " + moburiglogic::FileNameOf( resolvedPath ) + " (from scene folder)";
+}
+
+// 绑定缺失关节告警：DNA 与绑定不匹配时只提示，不阻断绑定
+std::string MissingBindingLine( int missing )
+{
+    if (missing <= 0) return std::string();
+    return "\nWarning: " + std::to_string( missing ) + " DNA joints not found in scene";
 }
 } // namespace
 
@@ -143,7 +158,9 @@ void RigLogicHeadLayout::RefreshStatus()
         std::snprintf( buf, sizeof(buf),
             "DNA not loaded.\n"
             "1) Set DNA file (head.dna)  2) Drag 'head' joint into\n"
-            "Skeleton Root reference  3) Check Active." );
+            "Skeleton Root reference  3) Check Active.\n"
+            "Fallback: a head.dna placed next to the FBX is used\n"
+            "when DNA Path cannot be loaded." );
     }
     else if (!mConstraint->BindingsReady())
     {
@@ -166,7 +183,16 @@ void RigLogicHeadLayout::RefreshStatus()
             mConstraint->JointOutCount(), mConstraint->BsCount(),
             mConstraint->LastSolveMilliseconds() );
     }
-    SetIfChanged( mLabelStatus, buf, mStatusCache, sizeof(mStatusCache) );
+
+    // DNA 来源与缺失绑定提示（回退时让动画师一眼看出用的是哪份 DNA）
+    std::string text = buf;
+    if (mConstraint->DnaLoaded())
+    {
+        text += DnaSourceLine( mConstraint->ResolvedDnaPath(),
+                               mConstraint->DnaFromSceneFolder() );
+        text += MissingBindingLine( mConstraint->MissingBindings() );
+    }
+    SetIfChanged( mLabelStatus, text.c_str(), mStatusCache, sizeof(mStatusCache) );
 }
 
 void RigLogicHeadLayout::RebuildBindings()
@@ -307,7 +333,9 @@ void RigLogicBodyLayout::RefreshStatus()
         std::snprintf( buf, sizeof(buf),
             "DNA not loaded.\n"
             "1) Set DNA file (body.dna)  2) Drag 'pelvis' joint into\n"
-            "Skeleton Root reference  3) Check Active." );
+            "Skeleton Root reference  3) Check Active.\n"
+            "Fallback: a body.dna placed next to the FBX is used\n"
+            "when DNA Path cannot be loaded." );
     }
     else if (!mConstraint->BindingsReady())
     {
@@ -325,7 +353,16 @@ void RigLogicBodyLayout::RefreshStatus()
             mConstraint->InputCount(), mConstraint->OutputCount(),
             mConstraint->LastSolveMilliseconds() );
     }
-    SetIfChanged( mLabelStatus, buf, mStatusCache, sizeof(mStatusCache) );
+
+    // DNA 来源与缺失绑定提示（回退时让动画师一眼看出用的是哪份 DNA）
+    std::string text = buf;
+    if (mConstraint->DnaLoaded())
+    {
+        text += DnaSourceLine( mConstraint->ResolvedDnaPath(),
+                               mConstraint->DnaFromSceneFolder() );
+        text += MissingBindingLine( mConstraint->MissingBindings() );
+    }
+    SetIfChanged( mLabelStatus, text.c_str(), mStatusCache, sizeof(mStatusCache) );
 }
 
 void RigLogicBodyLayout::EventIdle( HISender, HKEvent )

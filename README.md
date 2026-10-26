@@ -38,6 +38,7 @@ C++ 类型：`RigLogicHeadConstraint`
 - 根据 DNA 的 mesh-channel mapping 输出 BlendShape 权重。
 - 将 RigLogic 的 `0–1` BlendShape 输出转换为 MotionBuilder 的 `0–100` 属性值。
 - 提供 DNA 路径、LOD、输入模式、上次求解耗时、重建绑定和表情归零操作。
+- DNA 路径无法加载时，自动回退到绑定 FBX 同目录的固定文件名 `head.dna`（见[DNA 路径回退](#dna-路径回退棚内移动作业)）。
 
 头部约束当前不创建关节缩放输出。
 
@@ -50,6 +51,7 @@ C++ 类型：`RigLogicBodyConstraint`
 - 在 MotionBuilder 求值图中运行身体修形求解。
 - 输出身体修形关节的局部平移、旋转和缩放。
 - 提供 DNA 路径、LOD、上次求解耗时和重建绑定操作。
+- DNA 路径无法加载时，自动回退到绑定 FBX 同目录的固定文件名 `body.dna`（见[DNA 路径回退](#dna-路径回退棚内移动作业)）。
 
 身体约束当前驱动修形关节，不输出 BlendShape。
 
@@ -278,6 +280,25 @@ ctest --test-dir build -C Release --output-on-failure
 
 `Skeleton Root` 引用组只接受一个模型。虽然插件会从该模型向上找到角色层级顶端，但建议头部使用 `head`，身体使用 `pelvis`，便于状态提示、namespace 解析和问题排查。
 
+### DNA 路径回退（棚内/移动作业）
+
+公司室内通常把 DNA 放在固定的共享盘路径，但动画师带绑定去动捕棚、外拍或异地工位时，往往无法创建完全相同的目录结构。为此插件内置了按文件名兜底的能力：
+
+| 尝试顺序 | 路径 | 说明 |
+| --- | --- | --- |
+| 1 | `DNA Path` 属性 | 原有行为，公司共享盘路径优先 |
+| 2 | `<绑定 FBX 所在目录>/head.dna`（头部）<br>`<绑定 FBX 所在目录>/body.dna`（身体） | 文件名固定，按约束类型各取一份 |
+
+规则说明：
+
+- 两级都是“能加载才算命中”：路径存在性不做预判，直接交给 RigLogic 读取，因此相对路径、网络路径等行为与原来的 `DNA Path` 完全一致。
+- `DNA Path` 属性**不会被回退路径覆盖**。在棚内保存 FBX 后，文件里记录的仍是公司路径，拿回公司依然能按原路径工作。
+- 场景未存盘（`FBXFileName` 为空）时不会尝试回退，避免用相对路径误读到无关文件。
+- 状态区会显示实际使用的 DNA，例如 `DNA: body.dna (from scene folder)`；MotionBuilder 日志中另有 `[RigLogicHead]`/`[RigLogicBody]` 的 `fallback to scene folder DNA` 记录。
+- 回退生效后会检查 DNA 关节在场景中的命中情况。若存在未找到的 DNA 关节，状态区显示 `Warning: N DNA joints not found in scene`，日志同时输出告警——这通常说明目录里那份 DNA 与当前绑定不匹配（例如同目录放了多个角色的 DNA）。插件只告警不阻断，此时应人工确认 DNA 是否正确。
+- 由于文件名固定，**一个目录只能对应一个角色**。需要在一个棚内包中放多个角色时，请分目录存放各自的绑定 FBX 与 DNA。
+- 回退只在场景打开（或 `Rebuild Bindings`）时解析。中途把 DNA 拷到 FBX 旁边后，点一次 `Rebuild Bindings` 即可生效。
+
 ## 属性说明
 
 ### 共同属性
@@ -340,7 +361,7 @@ DNA joint name:          head
 
 约束的 DNA 路径、LOD、输入模式和引用关系会通过 MotionBuilder/FBX 对象系统保存。重新打开场景后应检查：
 
-1. DNA 文件路径仍然有效。
+1. DNA 文件路径仍然有效；不可用时会自动回退到绑定 FBX 同目录的 `head.dna`/`body.dna`（状态区会标明来源）。
 2. `Skeleton Root` 仍指向正确角色。
 3. 当前角色 namespace 未发生不兼容变化。
 4. 约束处于 `Active` 状态。
@@ -373,6 +394,7 @@ MotionBuilder 加载插件后会占用 DLL。先关闭所有 MotionBuilder 2019 
 - DNA 是否与当前角色资产匹配。
 - OpenRigLogic 是否支持该 DNA 数据版本。
 - MotionBuilder 日志中的 `[RigLogicHead]` 或 `[RigLogicBody]` 信息。
+- 若依赖同目录回退：绑定 FBX 是否已保存到磁盘，`head.dna`/`body.dna` 是否与该 FBX 在同一目录，文件名是否严格一致。
 
 ### DNA 已加载，但 Bindings NOT ready
 

@@ -231,5 +231,49 @@ int main()
     CHECK( !IsPanelFrameName( "CTRL_C_jaw" ) );
     CHECK( !IsPanelFrameName( "GRP_FRM_x" ) );
     CHECK( !IsPanelFrameName( "frm_faceGUI" ) );
+
+    // ---- DNA 候选路径：属性路径优先，FBX 同目录固定文件名兑底 ----
+    CHECK( DirectoryOf( "D:/shot/hero.fbx" ) == "D:/shot" );
+    CHECK( DirectoryOf( "D:\\shot\\hero.fbx" ) == "D:\\shot" );
+    CHECK( DirectoryOf( "hero.fbx" ).empty() );
+    CHECK( DirectoryOf( "" ).empty() );
+    CHECK( DirectoryOf( "D:/shot/" ) == "D:/shot" );
+
+    CHECK( FileNameOf( "D:/shot/body.dna" ) == "body.dna" );
+    CHECK( FileNameOf( "D:\\shot\\head.dna" ) == "head.dna" );
+    CHECK( FileNameOf( "head.dna" ) == "head.dna" );
+
+    CHECK( JoinPath( "D:/shot", "body.dna" ) == "D:/shot/body.dna" );
+    CHECK( JoinPath( "D:\\shot", "body.dna" ) == "D:\\shot\\body.dna" );
+    CHECK( JoinPath( "D:/shot/", "body.dna" ) == "D:/shot/body.dna" );
+    CHECK( JoinPath( "", "body.dna" ) == "body.dna" );
+
+    // 公司路径可用时优先；不可用时用 FBX 同目录
+    const auto withPrimary = DnaCandidates(
+        "//studio/share/dna/body.dna", "D:/mocap/shots/SH010/hero.fbx", "body.dna" );
+    CHECK( withPrimary.size() == 2 );
+    CHECK( withPrimary[0] == "//studio/share/dna/body.dna" );
+    CHECK( withPrimary[1] == "D:/mocap/shots/SH010/body.dna" );
+
+    // 属性路径为空：只留 FBX 同目录（棚内拿到的文件可能从未存过公司路径）
+    const auto noPrimary = DnaCandidates( "", "D:\\mocap\\hero.fbx", "body.dna" );
+    CHECK( noPrimary.size() == 1 );
+    CHECK( noPrimary[0] == "D:\\mocap\\body.dna" );
+
+    // 未存盘的场景（场景路径为空）：不能拼出 "/body.dna" 之类的错误路径
+    const auto unsaved = DnaCandidates( "//studio/share/dna/body.dna", "", "body.dna" );
+    CHECK( unsaved.size() == 1 );
+    CHECK( unsaved[0] == "//studio/share/dna/body.dna" );
+
+    // 两者指向同一文件：去重，不重复读取
+    const auto samePath = DnaCandidates(
+        "D:/shot/body.dna", "D:/shot/hero.fbx", "body.dna" );
+    CHECK( samePath.size() == 1 );
+
+    // 固定文件名为空 → 不产生兑底候选
+    CHECK( DnaCandidates( "D:/a/body.dna", "D:/b/hero.fbx", "" ).size() == 1 );
+    // 两者都为空 → 无候选（不尝试任何加载）
+    CHECK( DnaCandidates( "", "", "head.dna" ).empty() );
+
     return 0;
 }

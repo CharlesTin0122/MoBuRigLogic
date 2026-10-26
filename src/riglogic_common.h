@@ -105,6 +105,59 @@ inline std::string ExtractNamespacePrefix( const std::string& longName,
     return std::string();
 }
 
+// ---- DNA 路径解析 ----
+// 只做字符串处理，不碰文件系统：能不能用由 LoadRigRuntime 决定。
+// 这样不引入第二套路径/编码规则，中文目录等边界与现有 DnaPath 行为完全一致
+
+// "D:/shot/hero.fbx" → "D:/shot"；无目录部分（"hero.fbx"）→ 空串
+inline std::string DirectoryOf( const std::string& filePath )
+{
+    const auto pos = filePath.find_last_of( "/\\" );
+    return pos == std::string::npos ? std::string() : filePath.substr( 0, pos );
+}
+
+// 路径最后一段："D:/a/body.dna" → "body.dna"（界面/日志用）
+inline std::string FileNameOf( const std::string& filePath )
+{
+    const auto pos = filePath.find_last_of( "/\\" );
+    return pos == std::string::npos ? filePath : filePath.substr( pos + 1 );
+}
+
+// 目录 + 文件名：沿用目录原有的分隔符风格，避免拼出 "D:/a\b.dna" 这类混合路径
+inline std::string JoinPath( const std::string& dir, const std::string& fileName )
+{
+    if (dir.empty()) return fileName;
+    const char last = dir.back();
+    if (last == '/' || last == '\\') return dir + fileName;
+    const char sep = dir.find( '\\' ) != std::string::npos ? '\\' : '/';
+    return dir + sep + fileName;
+}
+
+// DNA 候选路径（按尝试顺序）：属性路径优先，绑定 FBX 同目录的固定文件名兜底。
+// 棚内没有公司共享盘时，只要把 body.dna/head.dna 放到 FBX 旁边即可正常工作。
+// 去重并忽略空串：两者指向同一文件时不重复读取
+inline std::vector<std::string> DnaCandidates( const std::string& primaryPath,
+                                               const std::string& sceneFilePath,
+                                               const char* sceneFolderFileName )
+{
+    std::vector<std::string> candidates;
+    const auto add = [&candidates]( const std::string& candidate ) {
+        if (candidate.empty()) return;
+        for (const auto& existing : candidates)
+            if (existing == candidate) return;
+        candidates.push_back( candidate );
+    };
+    add( primaryPath );
+    // 场景未存盘 / 场景路径无目录部分时不产生兜底候选：
+    // 拼出裸文件名 "body.dna" 会变成相对 MoBu 当前工作目录的路径，命中与否不可预测
+    if (sceneFolderFileName && *sceneFolderFileName)
+    {
+        const std::string sceneDir = DirectoryOf( sceneFilePath );
+        if (!sceneDir.empty()) add( JoinPath( sceneDir, sceneFolderFileName ) );
+    }
+    return candidates;
+}
+
 // FaceBoard 面板的框/背景模型（FRM_*）：锁定后不可在视图中选中，方便选 CTRL_* 控制器
 inline bool IsPanelFrameName( const std::string& name )
 {

@@ -14,3 +14,10 @@ CMakeUserPresets.json
 
 # 内部开发过程文档（不发布）
 /docs/superpowers/
+
+# 与 Maya 修形对比工具的采样输出
+/tools/compare_with_maya/out/
+
+# Python 字节码（在 Maya/MoBu 内运行工具时产生）
+__pycache__/
+*.pyc

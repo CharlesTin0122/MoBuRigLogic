@@ -130,6 +130,7 @@ MoBuRigLogic\
 │  ├─ riglogic_layouts.*              # 自定义约束面板
 │  └─ riglogic_common.h               # 公共 LOD、BlendShape 和输出路由逻辑
 ├─ tests\                             # C++ 单元测试和源码回归检查
+├─ tools\compare_with_maya\           # 与 Maya 的修形一致性对比工具
 ├─ third_party\OpenRigLogic\         # 内置 OpenRigLogic 头文件、静态库和许可证
 └─ build\                             # CMake 构建输出
 ```
@@ -193,6 +194,13 @@ ctest --test-dir build -C Release --output-on-failure
 ```text
 100% tests passed, 0 tests failed out of 2
 ```
+
+### 与 Maya 修形对比（人工回归）
+
+插件与 Maya（MetaHumanForMaya）的身体修形一致性，用 `tools/compare_with_maya/` 做逐关节对比：
+在 Maya 与 MotionBuilder 中分别用同一套姿态表采样，再由普通 Python 对比输出差异。
+
+详细用法与基线结果见 [`tools/compare_with_maya/README.md`](tools/compare_with_maya/README.md)。
 
 ## 安装插件
 

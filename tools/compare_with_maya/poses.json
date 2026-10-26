@@ -1,0 +1,46 @@
+{
+  "_comment": "MetaHuman 身体修形对比测试姿态表。delta 为叠加在当前静置姿态上的局部欧拉增量（度），左右两侧完全相同。",
+  "poses": [
+    { "label": "P00_rest", "delta": {} },
+    { "label": "P01_upperarm_l_X+30", "delta": { "upperarm_l": [30, 0, 0] } },
+    { "label": "P02_upperarm_l_X-30", "delta": { "upperarm_l": [-30, 0, 0] } },
+    { "label": "P03_upperarm_l_Y+30", "delta": { "upperarm_l": [0, 30, 0] } },
+    { "label": "P04_upperarm_l_Z+30", "delta": { "upperarm_l": [0, 0, 30] } },
+    { "label": "P05_upperarm_l_X+60", "delta": { "upperarm_l": [60, 0, 0] } },
+    { "label": "P06_lowerarm_l_X+60", "delta": { "lowerarm_l": [60, 0, 0] } },
+    { "label": "P07_lowerarm_l_Y+60", "delta": { "lowerarm_l": [0, 60, 0] } },
+    { "label": "P08_lowerarm_l_Z+60", "delta": { "lowerarm_l": [0, 0, 60] } },
+    { "label": "P09_lowerarm_l_Z+120", "delta": { "lowerarm_l": [0, 0, 120] } },
+    { "label": "P10_clavicle_l_X+20", "delta": { "clavicle_l": [20, 0, 0] } },
+    { "label": "P11_clavicle_l_Y+20", "delta": { "clavicle_l": [0, 20, 0] } },
+    { "label": "P12_clavicle_l_Z+20", "delta": { "clavicle_l": [0, 0, 20] } },
+    { "label": "P13_hand_l_X+45", "delta": { "hand_l": [45, 0, 0] } },
+    { "label": "P14_hand_l_Y+45", "delta": { "hand_l": [0, 45, 0] } },
+    { "label": "P15_hand_l_Z+45", "delta": { "hand_l": [0, 0, 45] } },
+    { "label": "P16_thigh_l_X+45", "delta": { "thigh_l": [45, 0, 0] } },
+    { "label": "P17_thigh_l_Y+45", "delta": { "thigh_l": [0, 45, 0] } },
+    { "label": "P18_thigh_l_Z+45", "delta": { "thigh_l": [0, 0, 45] } },
+    { "label": "P19_thigh_l_X+90", "delta": { "thigh_l": [90, 0, 0] } },
+    { "label": "P20_calf_l_X+90", "delta": { "calf_l": [90, 0, 0] } },
+    { "label": "P21_calf_l_Y+45", "delta": { "calf_l": [0, 45, 0] } },
+    { "label": "P22_calf_l_Z+45", "delta": { "calf_l": [0, 0, 45] } },
+    { "label": "P23_foot_l_X+30", "delta": { "foot_l": [30, 0, 0] } },
+    { "label": "P24_foot_l_Z+30", "delta": { "foot_l": [0, 0, 30] } },
+    { "label": "P25_index_curl_l", "delta": { "index_01_l": [60, 0, 0], "index_02_l": [60, 0, 0], "index_03_l": [60, 0, 0] } },
+    { "label": "P26_pinky_curl_l", "delta": { "pinky_01_l": [60, 0, 0], "pinky_02_l": [60, 0, 0], "pinky_03_l": [60, 0, 0] } },
+    { "label": "P27_thumb_curl_l", "delta": { "thumb_01_l": [40, 0, 0], "thumb_02_l": [40, 0, 0], "thumb_03_l": [40, 0, 0] } },
+    { "label": "P28_arm_combo_l", "delta": { "upperarm_l": [0, 0, 45], "lowerarm_l": [0, 0, 90] } },
+    { "label": "P29_leg_combo_l", "delta": { "thigh_l": [45, 0, 0], "calf_l": [90, 0, 0] } },
+    { "label": "P30_upperarm_r_Z+30", "delta": { "upperarm_r": [0, 0, 30] } },
+    { "label": "P31_lowerarm_r_Z+60", "delta": { "lowerarm_r": [0, 0, 60] } },
+    { "label": "P32_thigh_r_X+45", "delta": { "thigh_r": [45, 0, 0] } },
+    { "label": "P33_calf_r_X+90", "delta": { "calf_r": [90, 0, 0] } },
+    {
+      "label": "P34_finger_combo_r",
+      "delta": {
+        "index_01_r": [60, 0, 0], "index_02_r": [60, 0, 0], "index_03_r": [60, 0, 0],
+        "ring_01_r": [60, 0, 0], "ring_02_r": [60, 0, 0], "ring_03_r": [60, 0, 0]
+      }
+    }
+  ]
+}

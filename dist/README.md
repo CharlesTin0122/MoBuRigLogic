@@ -6,12 +6,12 @@
 
 | 文件 | 目标 MotionBuilder | 源码分支 | 源码提交 | 构建目录 |
 | --- | --- | --- | --- | --- |
-| `moburiglogic_2019.dll` | 2019 | `mobu2019` | `ae20447` | `build2019/` |
-| `moburiglogic_2024.dll` | 2024 | `main` | `36c648d` | `build/` |
+| `moburiglogic_2019.dll` | 2019 | `mobu2019` | `0c44606` | `build2019/` |
+| `moburiglogic_2024.dll` | 2024 | `main` | `1f4bc37` | `build/` |
 
-两个提交为同一功能节点（`feat: Head 约束新增 Lock Panel Frames`）在两条分支上的平行提交。
+两个提交为同一功能节点（`feat: DNA 路径不可用时回退到绑定 FBX 同目录的 body.dna/head.dna`）在两条分支上的平行提交。
 
-编译日期：2026-10-10　配置：Release / x64 / MSVC 2022 / `/MD` / C++17
+编译日期：2026-10-26　配置：Release / x64 / MSVC 2022 / `/MD` / C++17
 
 ## 版本对应关系
 

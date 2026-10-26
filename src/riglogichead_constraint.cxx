@@ -45,6 +45,9 @@ using moburiglogic::ExtractNamespace;
 using moburiglogic::NeedsNeutralCompose;
 using moburiglogic::QuatConj;
 
+// 绑定 FBX 同目录下的固定文件名：公司路径不可用时用来兜底（棚内/外拍常用）
+static const char* kSceneFolderDnaName = "head.dna";
+
 bool RigLogicHeadConstraint::FBCreate()
 {
     FBPropertyPublish( this, DnaPath,     "DNA Path",      nullptr, nullptr );
@@ -90,6 +93,20 @@ void RigLogicHeadConstraint::EventUIIdle( HISender, HKEvent )
     {
         mAppliedFrameLock = frameLock;
         ApplyPanelFramesLock( frameLock == 1 );
+    }
+
+    // DNA 加载失败时的兜底懒重试。FbxRetrieve(kCleanup) 先于场景文件名就绪的情况存在
+    // （FBXFileName 为空 → 找不到 FBX 同目录的 head.dna），所以每遇到一组新的
+    // （场景路径, DNA 属性路径）组合就重试一次，避免每个空闲周期反复读 DNA
+    if (!mRig)
+    {
+        const char* prop = DnaPath.AsString();
+        const std::string key = moburiglogic::SceneFilePath() + "|" + (prop ? prop : "");
+        if (key != mDnaRetryKey)
+        {
+            mDnaRetryKey = key;
+            if (LoadDna()) RebuildBindings();
+        }
     }
 }
 
@@ -183,9 +200,28 @@ void RigLogicHeadConstraint::FBDestroy()
 
 bool RigLogicHeadConstraint::LoadDna()
 {
-    const char* path = DnaPath.AsString();
+    const char* prop = DnaPath.AsString();
+    const std::string propertyPath = prop ? prop : "";
+
+    // 候选顺序：DnaPath 属性 → 绑定 FBX 同目录的 head.dna（固定文件名）。
+    // 公司共享盘在公司可用，棚内/外拍只有 FBX 旁边的 DNA，两条路径各自生效。
+    // 注意：不能用“文件是否存在”预判，统一交给 LoadRigRuntime，
+    // 路径编码、相对路径等行为与原来的 DnaPath 完全一致
+    const auto candidates = moburiglogic::DnaCandidates(
+        propertyPath, moburiglogic::SceneFilePath(), kSceneFolderDnaName );
+
     moburiglogic::RigRuntime fresh;
-    const bool loaded = path && *path && moburiglogic::LoadRigRuntime( path, fresh );
+    std::string resolvedPath;
+    for (const auto& candidate : candidates)
+    {
+        if (moburiglogic::LoadRigRuntime( candidate.c_str(), fresh ))
+        {
+            resolvedPath = candidate;
+            break;
+        }
+    }
+    const bool loaded = !resolvedPath.empty();
+    const bool fromSceneFolder = loaded && resolvedPath != propertyPath;
 
     // 耗时的读取/构建在锁外完成，锁内只交换指针：求值线程看不到半成品，
     // 也不会在旧运行时被销毁时还在用它
@@ -204,6 +240,8 @@ bool RigLogicHeadConstraint::LoadDna()
     if (!loaded)
     {
         mLoadedDnaPath.clear();
+        mLoadedDnaPropertyPath.clear();
+        mDnaFromSceneFolder = false;
         return false;
     }
 
@@ -212,7 +250,12 @@ bool RigLogicHeadConstraint::LoadDna()
     const auto validLod = moburiglogic::ClampLod( static_cast<int>( LodLevel ), lodCount );
     LodLevel = static_cast<int>( validLod );
     mInst->setLOD( validLod );
-    mLoadedDnaPath = path;
+    mLoadedDnaPath = resolvedPath;
+    mLoadedDnaPropertyPath = propertyPath;
+    mDnaFromSceneFolder = fromSceneFolder;
+    if (fromSceneFolder)
+        FBTrace( "[RigLogicHead] DNA Path unavailable ('%s'), fallback to scene folder DNA: %s\n",
+                 propertyPath.c_str(), resolvedPath.c_str() );
     return true;
 }
 
@@ -227,6 +270,8 @@ void RigLogicHeadConstraint::ReleaseDna()
     }
     moburiglogic::DestroyRigRuntime( old );
     mLoadedDnaPath.clear();
+    mLoadedDnaPropertyPath.clear();
+    mDnaFromSceneFolder = false;
     mAppliedLod = -1;
 }
 
@@ -246,6 +291,7 @@ bool RigLogicHeadConstraint::BuildBindings( std::uint16_t lod )
     mBsOutputs.clear();
     mOutputRoutes.clear();
     mBindingsReady = false;
+    mMissingBindings = 0;
 
     FBModel* skelRoot = (FBModel*)ReferenceGet( mGroupSkeleton, 0 );
     if (!skelRoot || !mReader || !mRig || !mInst) return false;
@@ -325,7 +371,9 @@ bool RigLogicHeadConstraint::BuildBindings( std::uint16_t lod )
             const std::string jname = name.substr( 0, name.size()-3 );
             auto itModel = models.find( jname );
             auto itJoint = jointIndex.find( jname );
-            if (itModel == models.end() || itJoint == jointIndex.end()) continue;
+            // 场景里找不到该关节：统计为缺失（头部 DNA 对不上绑定时只告警，不阻断）
+            if (itModel == models.end()) { ++mMissingBindings; continue; }
+            if (itJoint == jointIndex.end()) continue;
 
             NeckInput ni;
             ni.rawBase = i;
@@ -357,7 +405,7 @@ bool RigLogicHeadConstraint::BuildBindings( std::uint16_t lod )
         auto sv = mReader->getJointName( j16 );
         std::string jname( sv.data(), sv.size() );
         auto itModel = models.find( jname );
-        if (itModel == models.end()) continue;
+        if (itModel == models.end()) { ++mMissingBindings; continue; }
         FBModel* m = itModel->second;
 
         JointOutput jo;
@@ -464,6 +512,9 @@ bool RigLogicHeadConstraint::BuildBindings( std::uint16_t lod )
              requestedMappings,
              boundMappings,
              requestedMappings - boundMappings );
+    if (mMissingBindings > 0)
+        FBTrace( "[RigLogicHead] WARNING: %d DNA joints not found in scene (DNA may not match this rig)\n",
+                 mMissingBindings );
 
     mBindingsReady = ( !mExprInputs.empty() || !mGuiInputs.empty() )
                   && !mJointOutputs.empty();
@@ -473,10 +524,10 @@ bool RigLogicHeadConstraint::BuildBindings( std::uint16_t lod )
 void RigLogicHeadConstraint::SetupAllAnimationNodes()
 {
     if (!ReferenceGet( mGroupSkeleton, 0 )) return;
-    // 路径变化或未加载时（重新）加载 DNA —— 修复换 DNA 后仍用旧数据
+    // 属性路径变化或未加载时（重新）加载 DNA —— 修复换 DNA 后仍用旧数据
     const char* p = DnaPath.AsString();
     const std::string want = p ? p : "";
-    if ((!mRig || want != mLoadedDnaPath) && !LoadDna()) return;
+    if ((!mRig || want != mLoadedDnaPropertyPath) && !LoadDna()) return;
 
     const auto validLod = ResolveLod();
     LodLevel = static_cast<int>( validLod );
@@ -668,11 +719,14 @@ bool RigLogicHeadConstraint::FbxRetrieve( FBFbxObject* pFbxObject, kFbxObjectSto
 {
     if (pStoreWhat == kCleanup)
     {
-        // 场景加载完成后重建运行时；若 SetupAllAnimationNodes 已按同一路径加载过则跳过，
-        // 避免重复读取 DNA 并在求值可能已开始时替换运行时
+        // 场景加载完成后重建运行时；若 SetupAllAnimationNodes 已按同一属性路径加载过则跳过，
+        // 避免重复读取 DNA 并在求值可能已开始时替换运行时。
+        // 属性路径打不开时会回退到 FBX 同目录的 head.dna（棚内/外拍场景）
         const char* path = DnaPath.AsString();
-        if (path && *path && (!mRig || mLoadedDnaPath != path))
-            LoadDna();
+        const std::string want = path ? path : "";
+        if ((!mRig || mLoadedDnaPropertyPath != want) && !LoadDna())
+            FBTrace( "[RigLogicHead] DNA not loaded from '%s' or scene folder %s\n",
+                     want.c_str(), kSceneFolderDnaName );
     }
     return true;
 }

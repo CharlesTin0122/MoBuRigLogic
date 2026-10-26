@@ -72,6 +72,9 @@ public:
     size_t BsCount()       const { return mBsOutputs.size(); }
     bool   DnaLoaded()     const { return mRig != nullptr; }
     double LastSolveMilliseconds() const { return mLastSolveMs.load(); }
+    bool   DnaFromSceneFolder() const { return mDnaFromSceneFolder; }  //!< DNA 来自 FBX 同目录兜底
+    int    MissingBindings()    const { return mMissingBindings; }      //!< 未在场景中找到的 DNA 关节数
+    const std::string& ResolvedDnaPath() const { return mLoadedDnaPath; } //!< 实际加载的 DNA 文件
     bool   RebuildBindings();
     void   ZeroFaceControls();     //!< 面部表情回到中立：面板控制器位移 + 表情属性全部归零（可撤销）
     void   SetPanelFramesLocked( bool locked );   //!< 设置 LockPanelFrames 并立即应用到 FRM_*
@@ -120,7 +123,9 @@ private:
     trio::FileStream*        mStream = nullptr;
     rl4::RigLogic*           mRig    = nullptr;
     rl4::RigInstance*        mInst   = nullptr;
-    std::string              mLoadedDnaPath;   // 已加载路径（换 DNA 检测）
+    std::string              mLoadedDnaPath;   // 实际加载的 DNA 文件路径（可能是兜底路径）
+    std::string              mLoadedDnaPropertyPath; // 加载时的 DnaPath 属性值（换 DNA 检测）
+    std::string              mDnaRetryKey;     // 兜底懒重试去重键（场景路径|属性路径）
 
     std::vector<ExprInput>   mExprInputs;
     std::vector<GuiInput>    mGuiInputs;
@@ -138,6 +143,8 @@ private:
     int  mAppliedLod    = -1;         // 当前绑定所用 LOD；UI 空闲时与 LodLevel 比对，变了即重建
     int  mAppliedFrameLock = -1;      // 已应用的 LockPanelFrames；-1=尚未记录（首个空闲周期只记录不改场景）
     bool mBindingsReady = false;
+    bool mDnaFromSceneFolder = false;  // true=使用了 FBX 同目录的 head.dna
+    int  mMissingBindings = 0;         // 上次 BuildBindings 里未找到的 DNA 关节数（只告警）
 };
 
 #endif /* __RIGLOGIC_HEAD_CONSTRAINT_H__ */

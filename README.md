@@ -524,7 +524,7 @@ cmake -S . -B build_fresh `
 | --- | --- | --- |
 | 点 `Rebuild Bindings` / 拖 `LOD Level` / 改 `DNA Path` | 可以（会自动延后） | 停播后自动生效 |
 | 改动 `Skeleton Root` 引用组、拖入新角色、Merge | **禁止** | 这是 MoBu 自己发起的节点拆除，插件无法拦截；请先停播 |
-| Plot（Animation → Plot） | 先停播 | Plot 会逐帧写缓存；Plot 后建议重建绑定或关闭 `Active`，避免“关键帧 + 约束”双重驱动 |
+| Plot（Animation → Plot） | 可以，无冲突 | 标准 Plot（Character → Skeleton）只烘主骨骼（本 rig 为 Character 占用的 74 个模型），不包含修形/面部关节与 BlendShape；这些仍由插件实时计算。**例外**：若用 Plot All Models 或自定义脚本遍历全部模型 plot，会给修形关节也 K 帧——约束仍 Active 时以约束输出为准（表面看正常），但断开约束后动画会跳；Plot 后请关掉 `Active` 擦一遍时间轴自检 |
 | 删除/替换面模、换角色 | 先取消 `Active` 或删除约束 | 避免输出节点指向已删除的宿主 |
 
 一个角色一个约束（头部 + 身体各一个），不要多个约束写同一批关节。验收建议：开绑 → 播放 30 秒 → 录一段 → 停 → Plot → 回放核对。

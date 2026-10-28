@@ -78,18 +78,27 @@ void RigLogicBodyConstraint::EventUIIdle( HISender, HKEvent )
     if ((double)LastSolveMs != ms) LastSolveMs = ms;
 
     // LOD 改动即时生效：驱动集/BS 映射随 LOD 变化，需重建绑定（不止 setLOD）。
-    // 先记下目标 LOD 再重建，重建失败也不会每个空闲周期反复重试
+    // 先记下目标 LOD 再重建，重建失败也不会每个空闲周期反复重试。
+    // 播放中不重建，也不记 mAppliedLod，停止后自然会再触发一次
     const int lod = static_cast<int>( LodLevel );
-    if (mRig && mAppliedLod >= 0 && lod != mAppliedLod)
+    if (mRig && mAppliedLod >= 0 && lod != mAppliedLod
+        && !moburiglogic::IsTransportPlaying())
     {
         mAppliedLod = lod;
+        RebuildBindings();
+    }
+
+    // 播放中挂起的重建：停止后补做一次
+    if (mRebuildPending && !moburiglogic::IsTransportPlaying())
+    {
+        mRebuildPending = false;
         RebuildBindings();
     }
 
     // DNA 加载失败时的兜底懒重试。FbxRetrieve(kCleanup) 先于场景文件名就绪的情况存在
     // （FBXFileName 为空 → 找不到 FBX 同目录的 body.dna），所以每遇到一组新的
     // （场景路径, DNA 属性路径）组合就重试一次，避免每个空闲周期反复读 DNA
-    if (!mRig)
+    if (!mRig && !moburiglogic::IsTransportPlaying())
     {
         const char* prop = DnaPath.AsString();
         const std::string key = moburiglogic::SceneFilePath() + "|" + (prop ? prop : "");
@@ -264,6 +273,7 @@ bool RigLogicBodyConstraint::BuildBindings( std::uint16_t lod )
         // 输入节点：驱动关节与父级的全局 Rotation，局部在求值时反推。
         // 不用 Lcl Rotation：HIK 激活时其输出节点读到的是全局旋转
         ib.node = AnimationNodeOutCreate( 1000 + i, m, ANIMATIONNODE_TYPE_ROTATION );
+        if (!ib.node) continue;   // 创建失败：跳过该驱动关节（否则求值时空指针）
         ib.parentNode = nullptr;
         if (FBModel* parent = m->Parent)
         {
@@ -348,6 +358,12 @@ bool RigLogicBodyConstraint::BuildBindings( std::uint16_t lod )
 void RigLogicBodyConstraint::SetupAllAnimationNodes()
 {
     if (!ReferenceGet( mGroupSkeleton, 0 )) return;
+    // 播放中不重建绑定/不重读 DNA：交给 UI 空闲，停止后补做
+    if (moburiglogic::IsTransportPlaying())
+    {
+        mRebuildPending = true;
+        return;
+    }
     // 路径变化或未加载时（重新）加载 DNA —— 修复换 DNA 后仍用旧数据
     const char* p = DnaPath.AsString();
     const std::string want = p ? p : "";
@@ -365,6 +381,14 @@ bool RigLogicBodyConstraint::RebuildBindings()
 {
     FBModel* root = static_cast<FBModel*>( ReferenceGet( mGroupSkeleton, 0 ) );
     if (!root) return false;
+
+    // 播放/求值中重建会销毁并重建动画节点，与求值线程并发时可能崩——延后到停止后由 UI 空闲补做
+    if (moburiglogic::IsTransportPlaying())
+    {
+        mRebuildPending = true;
+        return mBindingsReady;
+    }
+    mRebuildPending = false;
 
     const bool wasActive = static_cast<bool>( Active );
     Active = false;
@@ -399,25 +423,32 @@ bool RigLogicBodyConstraint::AnimationNodeNotify( FBAnimationNode* pConnector,
                                                   FBEvaluateInfo* pEvaluateInfo,
                                                   FBConstraintInfo* pConstraintInfo )
 {
-    // 锁只包住纯 RigLogic 计算与结果拷贝，不包 ReadData/WriteData：
-    // ReadData 可能触发上游（如 HIK 解算）求值并回到本约束，持锁读取会自锁死
+    // 锁的边界（并发安全的关键）：
+    //   * 绑定表（mInputs/mOutputs/mOutputRoutes）只允许在锁内访问：
+    //     主线程重建会 clear() 这些容器，求值线程无锁迭代/取引用会造悬垂指针
+    //   * ReadData/WriteData 一律在锁外：读可能触发上游（如 HIK）求值并回到本约束，
+    //     持锁读取会自锁死
     const long evalId = pEvaluateInfo->GetEvaluationID();
+
+    std::vector<InputBinding> inputs;
     bool needSolve;
     {
         std::lock_guard<std::mutex> lock( mSolveMutex );
         if (!mBindingsReady || !mRig || !mInst) return false;
         needSolve = ( evalId != mLastEvalId );
+        if (needSolve) inputs = mInputs;   // 元素是 POD + 节点指针，拷贝开销很小
     }
 
     // 每个求值 ID 只跑一次完整求解；后续输出节点直接取缓存结果
     if (needSolve)
     {
         const auto t0 = std::chrono::steady_clock::now();
-        std::vector<double> rawQuats( mInputs.size() * 4u );
-        for (std::size_t inputIndex = 0; inputIndex < mInputs.size(); ++inputIndex)
+        std::vector<double> rawQuats( inputs.size() * 4u );
+        for (std::size_t inputIndex = 0; inputIndex < inputs.size(); ++inputIndex)
         {
-            const auto& ib = mInputs[ inputIndex ];
+            const auto& ib = inputs[ inputIndex ];
             double globalE[3] = { 0, 0, 0 }, parentE[3] = { 0, 0, 0 };
+            if (!ib.node) continue;   // 节点创建失败：跳过，不空指针崩溃
             ib.node->ReadData( globalE, pEvaluateInfo );
             if (ib.parentNode) ib.parentNode->ReadData( parentE, pEvaluateInfo );
             DriverRelativeQuat( ib.qNeutralInv, parentE, globalE, &rawQuats[ inputIndex * 4u ] );
@@ -427,9 +458,9 @@ bool RigLogicBodyConstraint::AnimationNodeNotify( FBAnimationNode* pConnector,
         if (!mBindingsReady || !mRig || !mInst) return false;
         if (evalId != mLastEvalId)   // 并发时可能已被其他线程解完
         {
-            for (std::size_t inputIndex = 0; inputIndex < mInputs.size(); ++inputIndex)
+            for (std::size_t inputIndex = 0; inputIndex < inputs.size(); ++inputIndex)
             {
-                const std::uint16_t rawBase = mInputs[ inputIndex ].rawBase;
+                const std::uint16_t rawBase = inputs[ inputIndex ].rawBase;
                 for (std::uint16_t k = 0; k < 4u; ++k)
                     mInst->setRawControl( rawBase + k,
                         static_cast<float>( rawQuats[ inputIndex * 4u + k ] ) );
@@ -441,46 +472,60 @@ bool RigLogicBodyConstraint::AnimationNodeNotify( FBAnimationNode* pConnector,
         }
     }
 
-    const auto routeIt = mOutputRoutes.find( pConnector );
-    if (routeIt == mOutputRoutes.end()) return false;
-    const auto route = routeIt->second;
-    if (route.bindingIndex >= mOutputs.size()) return false;
-    const auto& output = mOutputs[ route.bindingIndex ];
-
-    float delta[9];
+    // ---- 输出：绑定信息 + 求解结果全在锁内取出，WriteData 在锁外 ----
+    moburiglogic::OutputKind outKind = moburiglogic::OutputKind::BlendShape;
+    FBAnimationNode* outNode = nullptr;
+    double jointDelta[9] = { 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+    double outNeutralT[3] = { 0, 0, 0 };
+    double outQNeutral[4] = { 0, 0, 0, 1 };
+    bool outComposeRot = false;
     {
         std::lock_guard<std::mutex> lock( mSolveMutex );
-        if (!mInst) return false;
+        if (!mBindingsReady || !mInst) return false;
+        const auto routeIt = mOutputRoutes.find( pConnector );
+        if (routeIt == mOutputRoutes.end()) return false;
+        const auto route = routeIt->second;
+        outKind = route.kind;
+        if (route.bindingIndex >= mOutputs.size()) return false;
+        const auto& output = mOutputs[ route.bindingIndex ];
+        outComposeRot = output.composeRot;
+        for (int k = 0; k < 3; ++k) outNeutralT[k] = output.neutralT[k];
+        for (int k = 0; k < 4; ++k) outQNeutral[k] = output.qNeutral[k];
+        outNode = route.kind == moburiglogic::OutputKind::JointRotation ? output.nodeR
+                : route.kind == moburiglogic::OutputKind::JointScaling   ? output.nodeS
+                                                                         : output.nodeT;
         const auto jointOutputs = mInst->getJointOutputs();
         const std::size_t base = static_cast<std::size_t>( output.jointIndex ) * 9u;
         if (base + 9u > jointOutputs.size()) return false;
-        for (std::size_t k = 0; k < 9u; ++k) delta[k] = jointOutputs[base + k];
+        for (std::size_t k = 0; k < 9u; ++k) jointDelta[k] = jointOutputs[base + k];
     }
 
-    switch (route.kind)
+    if (!outNode) return false;   // 节点可能因重建而失效，判空兜底
+
+    switch (outKind)
     {
     case moburiglogic::OutputKind::JointTranslation:
     {
         double value[3] = {
-            output.neutralT[0] + delta[0],
-            output.neutralT[1] + delta[1],
-            output.neutralT[2] + delta[2]
+            outNeutralT[0] + jointDelta[0],
+            outNeutralT[1] + jointDelta[1],
+            outNeutralT[2] + jointDelta[2]
         };
-        output.nodeT->WriteData( value, pEvaluateInfo );
+        outNode->WriteData( value, pEvaluateInfo );
         return true;
     }
     case moburiglogic::OutputKind::JointRotation:
     {
-        const double deltaEuler[3] = { delta[3], delta[4], delta[5] };
+        const double deltaEuler[3] = { jointDelta[3], jointDelta[4], jointDelta[5] };
         double value[3];
-        ComposeJointRotation( output.composeRot, output.qNeutral, deltaEuler, value );
-        output.nodeR->WriteData( value, pEvaluateInfo );
+        ComposeJointRotation( outComposeRot, outQNeutral, deltaEuler, value );
+        outNode->WriteData( value, pEvaluateInfo );
         return true;
     }
     case moburiglogic::OutputKind::JointScaling:
     {
-        double value[3] = { 1.0 + delta[6], 1.0 + delta[7], 1.0 + delta[8] };
-        output.nodeS->WriteData( value, pEvaluateInfo );
+        double value[3] = { 1.0 + jointDelta[6], 1.0 + jointDelta[7], 1.0 + jointDelta[8] };
+        outNode->WriteData( value, pEvaluateInfo );
         return true;
     }
     case moburiglogic::OutputKind::BlendShape:

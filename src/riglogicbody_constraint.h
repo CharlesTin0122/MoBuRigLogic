@@ -128,6 +128,7 @@ private:
     long mLastEvalId    = -1;         // 每求值ID只求解一次（多输出节点共享结果）
     int  mAppliedLod    = -1;         // 当前绑定所用 LOD；UI 空闲时与 LodLevel 比对，变了即重建
     bool mBindingsReady = false;
+    bool mRebuildPending = false;      // 播放中请求过重建，停止后由 UI 空闲补做
     moburiglogic::DnaSource mDnaSource = moburiglogic::DnaSource::Property; // 当前 DNA 来源级别
     int  mMissingBindings = 0;         // 上次 BuildBindings 里未找到的 DNA 关节数（只告警）
 };

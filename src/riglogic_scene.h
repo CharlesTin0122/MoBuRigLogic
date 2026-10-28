@@ -81,6 +81,13 @@ inline std::string SceneFilePath()
     return path ? std::string( path ) : std::string();
 }
 
+// 播放/求值中：此期间禁止重建绑定与重载 DNA。
+// 重建会销毁并重建动画节点，与求值线程并发时容易产生悬垂指针（MoBu 的经典崩溃点）
+inline bool IsTransportPlaying()
+{
+    return static_cast<bool>( FBPlayerControl().IsPlaying );
+}
+
 // 提取模型的 namespace 前缀（"Char01:pelvis" → "Char01:"；无则空串）
 inline std::string ExtractNamespace( FBModel* m )
 {

@@ -149,6 +149,7 @@ private:
     int  mAppliedLod    = -1;         // 当前绑定所用 LOD；UI 空闲时与 LodLevel 比对，变了即重建
     int  mAppliedFrameLock = -1;      // 已应用的 LockPanelFrames；-1=尚未记录（首个空闲周期只记录不改场景）
     bool mBindingsReady = false;
+    bool mRebuildPending = false;      // 播放中请求过重建，停止后由 UI 空闲补做
     moburiglogic::DnaSource mDnaSource = moburiglogic::DnaSource::Property; // 当前 DNA 来源级别
     int  mMissingBindings = 0;         // 上次 BuildBindings 里未找到的 DNA 关节数（只告警）
 };

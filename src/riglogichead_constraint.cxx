@@ -82,11 +82,20 @@ void RigLogicHeadConstraint::EventUIIdle( HISender, HKEvent )
     if ((double)LastSolveMs != ms) LastSolveMs = ms;
 
     // LOD 改动即时生效：驱动集/BS 映射随 LOD 变化，需重建绑定（不止 setLOD）。
-    // 先记下目标 LOD 再重建，重建失败也不会每个空闲周期反复重试
+    // 先记下目标 LOD 再重建，重建失败也不会每个空闲周期反复重试。
+    // 播放中不重建，也不记 mAppliedLod，停止后自然会再触发一次
     const int lod = static_cast<int>( LodLevel );
-    if (mRig && mAppliedLod >= 0 && lod != mAppliedLod)
+    if (mRig && mAppliedLod >= 0 && lod != mAppliedLod
+        && !moburiglogic::IsTransportPlaying())
     {
         mAppliedLod = lod;
+        RebuildBindings();
+    }
+
+    // 播放中挂起的重建：停止后补做一次
+    if (mRebuildPending && !moburiglogic::IsTransportPlaying())
+    {
+        mRebuildPending = false;
         RebuildBindings();
     }
 
@@ -106,7 +115,7 @@ void RigLogicHeadConstraint::EventUIIdle( HISender, HKEvent )
     // DNA 加载失败时的兜底懒重试。FbxRetrieve(kCleanup) 先于场景文件名就绪的情况存在
     // （FBXFileName 为空 → 找不到 FBX 同目录的 head.dna），所以每遇到一组新的
     // （场景路径, DNA 属性路径）组合就重试一次，避免每个空闲周期反复读 DNA
-    if (!mRig)
+    if (!mRig && !moburiglogic::IsTransportPlaying())
     {
         const char* prop = DnaPath.AsString();
         const std::string key = moburiglogic::SceneFilePath() + "|" + (prop ? prop : "");
@@ -370,6 +379,7 @@ bool RigLogicHeadConstraint::BuildBindings( std::uint16_t lod )
             gi.eyeStick = ( ctrlName == kLeftEyeStick || ctrlName == kRightEyeStick );
             gi.node = AnimationNodeOutCreate( 500 + g, itModel->second,
                                               ANIMATIONNODE_TYPE_LOCAL_TRANSLATION );
+            if (!gi.node) continue;   // 创建失败：跳过该通道（否则求值时空指针）
             mGuiInputs.push_back( gi );
         }
 
@@ -414,6 +424,7 @@ bool RigLogicHeadConstraint::BuildBindings( std::uint16_t lod )
             ni.rawBase = i;
             ni.node = AnimationNodeOutCreate( 1000 + i, itModel->second,
                                               ANIMATIONNODE_TYPE_ROTATION );
+            if (!ni.node) continue;   // 创建失败：跳过该关节
             ni.parentNode = itModel->second->Parent
                 ? AnimationNodeOutCreate( 2000 + i, itModel->second->Parent,
                                           ANIMATIONNODE_TYPE_ROTATION )
@@ -559,6 +570,12 @@ bool RigLogicHeadConstraint::BuildBindings( std::uint16_t lod )
 void RigLogicHeadConstraint::SetupAllAnimationNodes()
 {
     if (!ReferenceGet( mGroupSkeleton, 0 )) return;
+    // 播放中不重建绑定/不重读 DNA：交给 UI 空闲，停止后补做
+    if (moburiglogic::IsTransportPlaying())
+    {
+        mRebuildPending = true;
+        return;
+    }
     // 属性路径变化或未加载时（重新）加载 DNA —— 修复换 DNA 后仍用旧数据
     const char* p = DnaPath.AsString();
     const std::string want = p ? p : "";
@@ -576,6 +593,14 @@ bool RigLogicHeadConstraint::RebuildBindings()
 {
     FBModel* root = static_cast<FBModel*>( ReferenceGet( mGroupSkeleton, 0 ) );
     if (!root) return false;
+
+    // 播放/求值中重建会销毁并重建动画节点，与求值线程并发时可能崩——延后到停止后由 UI 空闲补做
+    if (moburiglogic::IsTransportPlaying())
+    {
+        mRebuildPending = true;
+        return mBindingsReady;
+    }
+    mRebuildPending = false;
 
     const bool wasActive = static_cast<bool>( Active );
     Active = false;
@@ -611,14 +636,30 @@ bool RigLogicHeadConstraint::AnimationNodeNotify( FBAnimationNode* pConnector,
                                                   FBEvaluateInfo* pEvaluateInfo,
                                                   FBConstraintInfo* pConstraintInfo )
 {
-    // 锁只包住纯 RigLogic 计算与结果拷贝，不包 ReadData/GetData/WriteData：
-    // 读取可能触发上游（如 HIK 解算）求值并回到本约束，持锁读取会自锁死
+    // 锁的边界（并发安全的关键）：
+    //   * 绑定表（mGuiInputs/mJointOutputs/mBsOutputs/mOutputRoutes）只允许在锁内访问：
+    //     主线程重建会 clear() 这些容器，求值线程无锁迭代/取引用会造成悬垂与迭代器失效
+    //   * ReadData/GetData/WriteData 一律在锁外调用：读可能触发上游（如 HIK）求值
+    //     并回到本约束，持锁读取会自锁死
+    // 做法：锁内“拷出输入节点快照 + 取绑定信息 + 拷结果”，锁外做实际读写
     const long evalId = pEvaluateInfo->GetEvaluationID();
+
+    std::vector<GuiInput>  guiInputs;
+    std::vector<ExprInput> exprInputs;
+    std::vector<NeckInput> neckInputs;
+    FBAnimationNode* eyeLinkNode = nullptr;
     bool needSolve;
     {
         std::lock_guard<std::mutex> lock( mSolveMutex );
         if (!mBindingsReady || !mRig || !mInst) return false;
         needSolve = ( evalId != mLastEvalId );
+        if (needSolve)
+        {
+            guiInputs  = mGuiInputs;    // 元素是 POD + 节点指针，拷贝开销很小
+            exprInputs = mExprInputs;
+            neckInputs = mNeckInputs;
+            eyeLinkNode = mEyeLinkNode;
+        }
     }
 
     if (needSolve)
@@ -626,40 +667,43 @@ bool RigLogicHeadConstraint::AnimationNodeNotify( FBAnimationNode* pConnector,
         const auto t0 = std::chrono::steady_clock::now();
 
         // FaceBoard 模式：面板位移；表情属性模式：属性值（支持K帧动画取值）
-        std::vector<float> guiValues( mGuiInputs.size() );
+        std::vector<float> guiValues( guiInputs.size() );
         // 眼睛联动：CTRL_C_eye 的位移与左右眼摇杆在 Maya 里是角度相加（blendWeighted），
         // DNA 的摇杆→激活值映射在 [-1,1] 内是线性的，所以直接在摇杆域相加等价
         double eyeLink[3] = { 0.0, 0.0, 0.0 };
-        const bool eyeLinkOn = mEyeLinkNode && static_cast<bool>( EyeLinkage );
-        if (eyeLinkOn) mEyeLinkNode->ReadData( eyeLink, pEvaluateInfo );
-        for (std::size_t i = 0; i < mGuiInputs.size(); ++i)
+        const bool eyeLinkOn = eyeLinkNode && static_cast<bool>( EyeLinkage );
+        if (eyeLinkOn) eyeLinkNode->ReadData( eyeLink, pEvaluateInfo );
+        for (std::size_t i = 0; i < guiInputs.size(); ++i)
         {
+            if (!guiInputs[i].node) continue;   // 节点创建失败：跳过该通道，不空指针崩溃
             double t[3] = { 0, 0, 0 };
-            mGuiInputs[i].node->ReadData( t, pEvaluateInfo );
-            double v = t[ mGuiInputs[i].axis ];
-            if (mGuiInputs[i].eyeStick)
+            guiInputs[i].node->ReadData( t, pEvaluateInfo );
+            double v = t[ guiInputs[i].axis ];
+            if (guiInputs[i].eyeStick)
             {
-                if (eyeLinkOn) v += eyeLink[ mGuiInputs[i].axis ];
+                if (eyeLinkOn) v += eyeLink[ guiInputs[i].axis ];
                 v = moburiglogic::ClampEyeStick( v );   // DNA 域是 [-1,1]，越界会被外插成 0
             }
             guiValues[i] = static_cast<float>( v );
         }
         std::vector<float> exprValues;
-        if (mGuiInputs.empty())
+        if (guiInputs.empty())
         {
-            exprValues.resize( mExprInputs.size() );
-            for (std::size_t i = 0; i < mExprInputs.size(); ++i)
+            exprValues.resize( exprInputs.size() );
+            for (std::size_t i = 0; i < exprInputs.size(); ++i)
             {
+                if (!exprInputs[i].prop) continue;
                 double v = 0.0;
-                mExprInputs[i].prop->GetData( &v, sizeof(v), pEvaluateInfo );
+                exprInputs[i].prop->GetData( &v, sizeof(v), pEvaluateInfo );
                 exprValues[i] = static_cast<float>( v );
             }
         }
-        std::vector<double> neckQuats( mNeckInputs.size() * 4u );
-        for (std::size_t i = 0; i < mNeckInputs.size(); ++i)
+        std::vector<double> neckQuats( neckInputs.size() * 4u );
+        for (std::size_t i = 0; i < neckInputs.size(); ++i)
         {
-            const auto& ni = mNeckInputs[i];
+            const auto& ni = neckInputs[i];
             double globalE[3] = { 0, 0, 0 }, parentE[3] = { 0, 0, 0 };
+            if (!ni.node) continue;
             ni.node->ReadData( globalE, pEvaluateInfo );
             if (ni.parentNode) ni.parentNode->ReadData( parentE, pEvaluateInfo );
             DriverRelativeQuat( ni.qNeutralInv, parentE, globalE, &neckQuats[ i * 4u ] );
@@ -671,19 +715,19 @@ bool RigLogicHeadConstraint::AnimationNodeNotify( FBAnimationNode* pConnector,
         {
             if (!mGuiInputs.empty())
             {
-                for (std::size_t i = 0; i < mGuiInputs.size(); ++i)
-                    mInst->setGUIControl( mGuiInputs[i].guiIndex, guiValues[i] );
+                for (std::size_t i = 0; i < guiInputs.size(); ++i)
+                    mInst->setGUIControl( guiInputs[i].guiIndex, guiValues[i] );
                 mRig->mapGUIToRawControls( mInst );   // 双向拆分/相位/量程全在 DNA 里
             }
             else
             {
-                for (std::size_t i = 0; i < mExprInputs.size(); ++i)
-                    mInst->setRawControl( mExprInputs[i].rawIndex, exprValues[i] );
+                for (std::size_t i = 0; i < exprInputs.size(); ++i)
+                    mInst->setRawControl( exprInputs[i].rawIndex, exprValues[i] );
             }
             // 颈部四元数在 GUI 映射之后写入，不被覆盖
-            for (std::size_t i = 0; i < mNeckInputs.size(); ++i)
+            for (std::size_t i = 0; i < neckInputs.size(); ++i)
                 for (std::uint16_t k = 0; k < 4u; ++k)
-                    mInst->setRawControl( mNeckInputs[i].rawBase + k,
+                    mInst->setRawControl( neckInputs[i].rawBase + k,
                                           static_cast<float>( neckQuats[ i * 4u + k ] ) );
             mRig->calculate( mInst );
 
@@ -693,62 +737,83 @@ bool RigLogicHeadConstraint::AnimationNodeNotify( FBAnimationNode* pConnector,
         }
     }
 
-    const auto routeIt = mOutputRoutes.find( pConnector );
-    if (routeIt == mOutputRoutes.end()) return false;
-    const auto route = routeIt->second;
-
-    if (route.kind == moburiglogic::OutputKind::BlendShape)
+    // ---- 输出：绑定信息 + 求解结果全在锁内取出，WriteData 在锁外 ----
+    moburiglogic::OutputKind outKind = moburiglogic::OutputKind::BlendShape;
+    FBAnimationNode* outNode = nullptr;
+    FBAnimationNode* outNodeS = nullptr;
+    double bsValue = 0.0;
+    double jointDelta[9] = { 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+    double outNeutralT[3] = { 0, 0, 0 };
+    double outQNeutral[4] = { 0, 0, 0, 1 };
+    bool outComposeRot = false;
     {
-        if (route.bindingIndex >= mBsOutputs.size()) return false;
-        const auto& out = mBsOutputs[ route.bindingIndex ];
-        double value = 0.0;
+        std::lock_guard<std::mutex> lock( mSolveMutex );
+        if (!mBindingsReady || !mInst) return false;
+        const auto routeIt = mOutputRoutes.find( pConnector );
+        if (routeIt == mOutputRoutes.end()) return false;
+        const auto route = routeIt->second;
+        outKind = route.kind;
+
+        if (route.kind == moburiglogic::OutputKind::BlendShape)
         {
-            std::lock_guard<std::mutex> lock( mSolveMutex );
-            if (!mInst) return false;
+            if (route.bindingIndex >= mBsOutputs.size()) return false;
+            const auto& out = mBsOutputs[ route.bindingIndex ];
+            outNode = out.node;
             const auto bs = mInst->getBlendShapeOutputs();
-            value = out.channel < bs.size() ? bs[ out.channel ] * 100.0 : 0.0;
+            bsValue = out.channel < bs.size() ? bs[ out.channel ] * 100.0 : 0.0;
         }
-        out.node->WriteData( &value, pEvaluateInfo );
+        else
+        {
+            if (route.bindingIndex >= mJointOutputs.size()) return false;
+            const auto& out = mJointOutputs[ route.bindingIndex ];
+            outNode   = out.nodeT;
+            outNodeS  = out.nodeS;
+            outComposeRot = out.composeRot;
+            for (int k = 0; k < 3; ++k) outNeutralT[k] = out.neutralT[k];
+            for (int k = 0; k < 4; ++k) outQNeutral[k] = out.qNeutral[k];
+            const auto jointOutputs = mInst->getJointOutputs();
+            const std::size_t base = static_cast<std::size_t>( out.jointIndex ) * 9u;
+            if (base + 9u > jointOutputs.size()) return false;
+            for (std::size_t k = 0; k < 9u; ++k) jointDelta[k] = jointOutputs[base + k];
+            if (route.kind == moburiglogic::OutputKind::JointRotation) outNode = out.nodeR;
+        }
+    }
+
+    if (outKind == moburiglogic::OutputKind::BlendShape)
+    {
+        if (!outNode) return false;
+        outNode->WriteData( &bsValue, pEvaluateInfo );
         return true;
     }
 
-    if (route.bindingIndex >= mJointOutputs.size()) return false;
-    const auto& out = mJointOutputs[ route.bindingIndex ];
-    float delta[9];
-    {
-        std::lock_guard<std::mutex> lock( mSolveMutex );
-        if (!mInst) return false;
-        const auto jointOutputs = mInst->getJointOutputs();
-        const std::size_t base = static_cast<std::size_t>( out.jointIndex ) * 9u;
-        if (base + 9u > jointOutputs.size()) return false;
-        for (std::size_t k = 0; k < 9u; ++k) delta[k] = jointOutputs[base + k];
-    }
+    // 节点可能因重建而失效（重建受“播放中不允许”守卫，理论上不会），判空兜底
+    if (!outNode) return false;
 
-    switch (route.kind)
+    switch (outKind)
     {
     case moburiglogic::OutputKind::JointTranslation:
     {
         double value[3] = {
-            out.neutralT[0] + delta[0],
-            out.neutralT[1] + delta[1],
-            out.neutralT[2] + delta[2]
+            outNeutralT[0] + jointDelta[0],
+            outNeutralT[1] + jointDelta[1],
+            outNeutralT[2] + jointDelta[2]
         };
-        out.nodeT->WriteData( value, pEvaluateInfo );
+        outNode->WriteData( value, pEvaluateInfo );
         return true;
     }
     case moburiglogic::OutputKind::JointRotation:
     {
-        const double deltaEuler[3] = { delta[3], delta[4], delta[5] };
+        const double deltaEuler[3] = { jointDelta[3], jointDelta[4], jointDelta[5] };
         double value[3];
-        ComposeJointRotation( out.composeRot, out.qNeutral, deltaEuler, value );
-        out.nodeR->WriteData( value, pEvaluateInfo );
+        ComposeJointRotation( outComposeRot, outQNeutral, deltaEuler, value );
+        outNode->WriteData( value, pEvaluateInfo );
         return true;
     }
     case moburiglogic::OutputKind::JointScaling:
     {
-        if (!out.nodeS) return false;
-        double value[3] = { 1.0 + delta[6], 1.0 + delta[7], 1.0 + delta[8] };
-        out.nodeS->WriteData( value, pEvaluateInfo );
+        if (!outNodeS) return false;
+        double value[3] = { 1.0 + jointDelta[6], 1.0 + jointDelta[7], 1.0 + jointDelta[8] };
+        outNodeS->WriteData( value, pEvaluateInfo );
         return true;
     }
     case moburiglogic::OutputKind::BlendShape:

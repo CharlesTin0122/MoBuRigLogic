@@ -14,7 +14,7 @@
 | profile | 输入 | 采集输出 | 判定指标 |
 | --- | --- | --- | --- |
 | `body` | 44 根 DNA raw control 驱动骨骼的局部欧拉增量 | 258 根修形关节（世界矩阵 + 本地 TRS） | 关节世界位置动态偏差、旋转输出偏差 |
-| `face` | FaceBoard 控制器 `CTRL_*` 的 translate（0..1），21 个定向姿势 | 840 根 `FACIAL_*` 关节、858 个 BlendShape 通道、5 个 DNA 网格 | 关节位置/旋转增量、BlendShape 权重 |
+| `face` | FaceBoard 控制器 `CTRL_*` 的 translate（0..1），27 个定向姿势（含眼球朝向） | 840 根 `FACIAL_*` 关节、858 个 BlendShape 通道、5 个 DNA 网格 | 关节位置/旋转增量、BlendShape 权重 |
 | `face_sweep` | 同上，但逐个控制器单独摆到 1.0（Maya 自动发现控制器） | 同上 | 同上 |
 
 两侧输入路径不同但等价：
@@ -121,22 +121,23 @@ python tools\compare_with_maya\compare.py --profile body --out-dir D:\tmp\cmp
 链上非均匀缩放、ML 行为、平移/缩放通路等因素；两侧 riglogic 二进制不同
 （Maya 内置版 vs OpenRigLogic 13.2.5）+ 插件自建的 raw control 反推路径是最可能的原因。
 
-### face（21 姿势）
+### face（27 姿势，含 `CTRL_L_eye` / `CTRL_R_eye` 的眼球朝向）
 
 | 指标 | 实测 |
 | --- | --- |
 | 关节世界位置差 | 9.1e-05 mm（0.09 µm） |
-| 关节本地旋转增量差 | 1.3e-06° |
+| 关节本地旋转增量差 | 1.6e-06° |
 | BlendShape 权重差 | 0（0..100 制） |
 | DNA 网格位姿 | 完全一致 |
 
-### face_sweep（173 个控制器 × 逐个 1.0）
+### face_sweep（178 个控制器 × 逐个 1.0）
 
 | 指标 | 实测 |
 | --- | --- |
 | 关节世界位置差 | 9.1e-05 mm |
 | 关节本地旋转增量差 | 1.4e-04° |
 | BlendShape 权重差 | 3.3e-04 |
+| 眼球朝向（`CTRL_L_eye` / `CTRL_R_eye` 的 tx/ty） | 3.5e-07° |
 | 有实际响应的控制器 | 约 4/5（其余在本 DNA 的 LOD0 上没有可见输出，两侧表现一致） |
 
 面部差异都在 float32 舍入量级，等同于逐位一致：两侧最终喂给 RigLogic 的是同一组 raw control 值
@@ -146,20 +147,22 @@ python tools\compare_with_maya\compare.py --profile body --out-dir D:\tmp\cmp
 
 ## 覆盖范围与已知限制
 
-1. **眼球朝向（8 个表情）在 FaceBoard 模式下驱动不了。**
-   Maya 里 `eyeLookUp/Down/Left/Right L/R` 由 aim 约束链驱动：
-   `CTRL_L/R_eyeAim` → `LOC_L/R_eyeAimDriver`（aimConstraint）→ `LOC_L/R_eyeDriver.rotateX`
-   → `unitConversion` → `CTRL_expressions.eyeLook*`。
-   MoBu 场景里没有 `CTRL_*_eyeAim` / `LOC_*_eyeDriver` / `lookDir*` 这些对象，
-   而 FaceBoard 模式只读 DNA GUI 控制器的**平移**，所以这 8 个通道在 MoBu 侧只能用
-   `Input Mode = Expression Properties`（约束上的 `eyeLookUpL` 等属性）驱动。
-   需要从面板驱动眼球朝向时，应扩展插件去读旋转类控制器（DNA GUI 目前只声明了 translate）。
-2. **部分控制器在本 DNA 上无可见输出**（`nose_wrinkleUpper` 静置已饱和在 1、`mouth_lipsTogether*`、
+1. **眼球朝向（8 个表情）可以正常驱动，两侧一致。**
+   FaceBoard 上的 `CTRL_L_eye` / `CTRL_R_eye` 的 **translate**（tx = 左右、ty = 上下，量程 -1..1）
+   就是眼球朝向的输入：Maya 里经 `animCurveUA` + `unitConversion` 之后混进 `LOC_L/R_eyeDriver`，
+   再转成 `CTRL_expressions.eyeLook*`；MoBu 侧直接读这两个控制器的 Lcl Translation。
+   实测 `CTRL_L_eye` 的 tx=+1 / ty=+1 两侧 `FACIAL_L_Eye` 旋转逐位相同（42.217° / -29.519°）。
+2. **唯一的面板覆盖差异：`CTRL_C_eye`（双眼同步朝向）。**
+   它是 Maya 侧的面板便利控制器（驱动 `LOC_C_eyeDriver` → 两只眼），DNA GUI 没有声明它，
+   所以 MoBu 的 FaceBoard 模式无法驱动；已列入 `poses_face_sweep.json` 的 `skip`。
+   Maya 的 `CTRL_L/R_eyeAim`、`LOC_*_eyeDriver`、`lookDir*` 等 aim 骨架同理也不在 MoBu 场景里，
+   但眼球朝向并不依赖它们（用 `CTRL_L/R_eye` 即可）。
+3. **部分控制器在本 DNA 上无可见输出**（`nose_wrinkleUpper` 静置已饱和在 1、`mouth_lipsTogether*`、
    `mouth_stretchLipsClose`、`neck_swallow`、`teeth*`、`jaw_openExtreme` 等），两侧表现一致，
    不是绑定问题；`face_sweep` 的报告会逐条列出。
-3. **只驱动 `CTRL_*` 的 translate**（FaceBoard 的表情基本都是平移驱动，例外就是第 1 条的 eye look）。
-4. **DNA 网格的 transform 不动**属正常：面部的顶点变形来自骨骼 + BlendShape，报告里的网格位姿列恒为 0。
-5. **一个场景里多个不同 DNA 的角色**时，`body` 的关节名/`face` 的通道名会混在一起；
+4. **只驱动 `CTRL_*` 的 translate**（FaceBoard 的表情基本都是平移驱动）。
+5. **DNA 网格的 transform 不动**属正常：面部的顶点变形来自骨骼 + BlendShape，报告里的网格位姿列恒为 0。
+6. **一个场景里多个不同 DNA 的角色**时，`body` 的关节名/`face` 的通道名会混在一起；
    建议一次只对比一个角色，或使用不同 namespace 后只打开一个角色的可见性。
 
 ## 实现注意
@@ -176,6 +179,8 @@ python tools\compare_with_maya\compare.py --profile body --out-dir D:\tmp\cmp
 - `capture.py` 同时要跑在 Maya 2024（py3）与 MotionBuilder 2019（py2.7）：
   不用 f-string / 类型注解，JSON 统一以二进制写入再 `encode`；
   MoBu 的 `FBPropertyManager.Find` 只接受 `char*`，传名字前要 `str()`（py2 下 JSON 给的是 unicode）。
-- `face_sweep` 的控制器列表由 Maya 侧生成（扫描 `animCurveUU` 的上游 `CTRL_*`），
+- `face_sweep` 的控制器列表由 Maya 侧生成（扫描动画曲线的上游 `CTRL_*`），
   按 `(控制器, 轴)` 去重——同一个轴上可能挂多条曲线（例如 `CTRL_L_eye_blink.translateY`
   同时驱动 `eyeBlinkL` 与 `eyeWidenL`），去重后每个物理控制轴只摆一次。
+- 扫描动画曲线时**不能只认 `animCurveUU`**：眼球朝向（`CTRL_L_eye` / `CTRL_R_eye`）走的是
+  `animCurveUA`（无单位→角度），只扫 UU 会把整条眼珠控制链漏掉，看起来像“眼球不可驱动”。

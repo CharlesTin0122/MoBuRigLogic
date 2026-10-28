@@ -21,6 +21,12 @@
     { "label": "F16_mouth_cornerPull_L", "delta": { "CTRL_L_mouth_cornerPull": [0, 1, 0] } },
     { "label": "F17_mouth_cornerDepress_R", "delta": { "CTRL_R_mouth_cornerDepress": [0, 1, 0] } },
     { "label": "F18_teeth_up", "delta": { "CTRL_C_teethU": [0, 1, 0] } },
+    { "label": "F21_eyeLook_left_L", "delta": { "CTRL_L_eye": [1, 0, 0] } },
+    { "label": "F22_eyeLook_right_L", "delta": { "CTRL_L_eye": [-1, 0, 0] } },
+    { "label": "F23_eyeLook_up_L", "delta": { "CTRL_L_eye": [0, 1, 0] } },
+    { "label": "F24_eyeLook_down_L", "delta": { "CTRL_L_eye": [0, -1, 0] } },
+    { "label": "F25_eyeLook_right_R", "delta": { "CTRL_R_eye": [-1, 0, 0] } },
+    { "label": "F26_eyeLook_up_R", "delta": { "CTRL_R_eye": [0, 1, 0] } },
     {
       "label": "F19_combo_smile",
       "delta": {

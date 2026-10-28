@@ -111,10 +111,17 @@ def maya_face_rig(cmds, node):
 
 
 def maya_face_controls(cmds):
-    """从 animCurveUU 上游反查 FaceBoard 的 translate 控制器：[[ctrl, axis, expr]]"""
+    """从 animCurve* 上游反查 FaceBoard 的 translate 控制器：[[ctrl, axis, expr]]
+
+    注意不能只扫 ``animCurveUU``：眼球朝向（``CTRL_L_eye``/``CTRL_R_eye``）走的是
+    ``animCurveUA``（无单位→角度），只扫 UU 会漏掉整条眼珠控制链。
+    """
     result = []
     seen = set()
-    for curve in cmds.ls(type="animCurveUU"):
+    curves = []
+    for curve_type in ("animCurveUU", "animCurveUA", "animCurveUL", "animCurveLA"):
+        curves.extend(cmds.ls(type=curve_type) or [])
+    for curve in curves:
         srcs = cmds.listConnections(curve, s=True, d=False, p=True) or []
         dsts = cmds.listConnections(curve, s=False, d=True, p=True) or []
         if not srcs or not dsts or not srcs[0].startswith("CTRL_"):
@@ -225,12 +232,12 @@ def run_maya(profile_name, poses_path, out_path, names_path):
             skip = set(extra["skip"] or [])
             value = extra["value"]
             poses = [("F000_rest", {})]
-            for n, (ctrl, axis, expr) in enumerate(controls):
+            for n, (ctrl, axis, _expr) in enumerate(controls):
                 if ctrl in skip:
                     continue
                 v = [0.0, 0.0, 0.0]
                 v[axis] = value
-                poses.append(("F%03d_%s_%s" % (n + 1, ctrl, expr), {ctrl: tuple(v)}))
+                poses.append(("F%03d_%s_t%s" % (n + 1, ctrl, "xyz"[axis]), {ctrl: tuple(v)}))
 
         used = sorted(set(k for _l, d in poses for k in d))
         rest = {}
@@ -394,12 +401,12 @@ def run_mobu(profile_name, poses_path, out_path, names_path):
             skip = set(extra["skip"] or [])
             value = extra["value"]
             poses = [("F000_rest", {})]
-            for n, (ctrl, axis, expr) in enumerate(controls):
+            for n, (ctrl, axis, _expr) in enumerate(controls):
                 if ctrl in skip:
                     continue
                 v = [0.0, 0.0, 0.0]
                 v[axis] = value
-                poses.append(("F%03d_%s_%s" % (n + 1, ctrl, expr), {ctrl: tuple(v)}))
+                poses.append(("F%03d_%s_t%s" % (n + 1, ctrl, "xyz"[axis]), {ctrl: tuple(v)}))
 
         used = sorted(set(k for _l, d in poses for k in d))
         rest = {}

@@ -1,6 +1,7 @@
 {
-  "_comment": "面部全控制器扫描：Maya 侧从 animCurveUU 反查每个 FaceBoard 控制器，逐个单独摆到 value，MoBu 侧复用同一份列表。skip 里是已知无法从 FaceBoard 驱动的控制器（见 README）。",
+  "_comment": "面部全控制器扫描：Maya 侧从 animCurve*（含 animCurveUA，眼球朝向用它）反查每个 FaceBoard 控制器，逐个单独摆到 value，MoBu 侧复用同一份列表。",
+  "_skipComment": "skip：Maya 侧的面板便利控制器，DNA GUI 未声明，MoBu 无法驱动（不是求值差异，见 README）。",
   "mode": "sweep",
   "value": 1.0,
-  "skip": []
+  "skip": ["CTRL_C_eye"]
 }

@@ -1,0 +1,40 @@
+{
+  "_comment": "面部修形定向姿势表：drive = {FaceBoard 控制器名: [tx, ty, tz]}，FaceBoard 的 translate 量程为 0..1。",
+  "mode": "static",
+  "poses": [
+    { "label": "F00_rest", "delta": {} },
+    { "label": "F01_jaw_open_50", "delta": { "CTRL_C_jaw": [0, 0.5, 0] } },
+    { "label": "F02_jaw_open_100", "delta": { "CTRL_C_jaw": [0, 1, 0] } },
+    { "label": "F03_jaw_left", "delta": { "CTRL_C_jaw": [1, 0, 0] } },
+    { "label": "F04_jaw_fwd", "delta": { "CTRL_C_jaw_fwdBack": [0, 1, 0] } },
+    { "label": "F05_blink_L", "delta": { "CTRL_L_eye_blink": [0, 1, 0] } },
+    { "label": "F06_blink_R", "delta": { "CTRL_R_eye_blink": [0, 1, 0] } },
+    { "label": "F07_blink_both", "delta": { "CTRL_L_eye_blink": [0, 1, 0], "CTRL_R_eye_blink": [0, 1, 0] } },
+    { "label": "F08_brow_raiseIn_L", "delta": { "CTRL_L_brow_raiseIn": [0, 1, 0] } },
+    { "label": "F09_brow_down_L", "delta": { "CTRL_L_brow_down": [0, 1, 0] } },
+    { "label": "F10_brow_raiseOut_L", "delta": { "CTRL_L_brow_raiseOut": [0, 1, 0] } },
+    { "label": "F11_eye_cheekRaise_L", "delta": { "CTRL_L_eye_cheekRaise": [0, 1, 0] } },
+    { "label": "F12_eye_squintInner_L", "delta": { "CTRL_L_eye_squintInner": [0, 1, 0] } },
+    { "label": "F13_eye_lidPress_L", "delta": { "CTRL_L_eye_lidPress": [0, 1, 0] } },
+    { "label": "F14_nose_wrinkle_L", "delta": { "CTRL_L_nose": [0, 1, 0] } },
+    { "label": "F15_mouth_funnelU_L", "delta": { "CTRL_L_mouth_funnelU": [0, 1, 0] } },
+    { "label": "F16_mouth_cornerPull_L", "delta": { "CTRL_L_mouth_cornerPull": [0, 1, 0] } },
+    { "label": "F17_mouth_cornerDepress_R", "delta": { "CTRL_R_mouth_cornerDepress": [0, 1, 0] } },
+    { "label": "F18_teeth_up", "delta": { "CTRL_C_teethU": [0, 1, 0] } },
+    {
+      "label": "F19_combo_smile",
+      "delta": {
+        "CTRL_L_mouth_cornerPull": [0, 1, 0], "CTRL_R_mouth_cornerPull": [0, 1, 0],
+        "CTRL_L_brow_raiseIn": [0, 0.5, 0], "CTRL_R_brow_raiseIn": [0, 0.5, 0]
+      }
+    },
+    {
+      "label": "F20_combo_jaw_squint",
+      "delta": {
+        "CTRL_C_jaw": [0, 1, 0],
+        "CTRL_L_eye_squintInner": [0, 0.7, 0], "CTRL_R_eye_squintInner": [0, 0.7, 0],
+        "CTRL_L_eye_cheekRaise": [0, 0.7, 0], "CTRL_R_eye_cheekRaise": [0, 0.7, 0]
+      }
+    }
+  ]
+}

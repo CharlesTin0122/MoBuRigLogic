@@ -80,16 +80,18 @@ void RigLogicBodyConstraint::EventUIIdle( HISender, HKEvent )
     // LOD 改动即时生效：驱动集/BS 映射随 LOD 变化，需重建绑定（不止 setLOD）。
     // 先记下目标 LOD 再重建，重建失败也不会每个空闲周期反复重试。
     // 播放中不重建，也不记 mAppliedLod，停止后自然会再触发一次
+    const bool playing = moburiglogic::IsTransportPlaying();
+    mStopIdleTicks = playing ? 0 : (mStopIdleTicks + 1);
     const int lod = static_cast<int>( LodLevel );
     if (mRig && mAppliedLod >= 0 && lod != mAppliedLod
-        && !moburiglogic::IsTransportPlaying())
+        && !playing && mStopIdleTicks >= 10)
     {
         mAppliedLod = lod;
         RebuildBindings();
     }
 
-    // 播放中挂起的重建：停止后补做一次
-    if (mRebuildPending && !moburiglogic::IsTransportPlaying())
+    // 播放中挂起的重建：等停播且空闲稳定后再补做，避开“停播瞬间求值未完全结束”
+    if (mRebuildPending && !playing && mStopIdleTicks >= 10)
     {
         mRebuildPending = false;
         RebuildBindings();
@@ -230,6 +232,9 @@ bool RigLogicBodyConstraint::BuildBindings( std::uint16_t lod )
     mOutputRoutes.clear();
     mBindingsReady = false;
     mMissingBindings = 0;
+    // 每轮重建用新的 UserId 段：MoBu 在 ReferenceRemove/Add 后可能残留同名 ID 的旧节点，
+    // 复用同一个 ID 会让求值抓到已释放的 connector（实测崩溃）
+    mNodeIdBase += 10000;
 
     FBModel* skelRoot = (FBModel*)ReferenceGet( mGroupSkeleton, 0 );
     if (!skelRoot || !mReader || !mRig || !mInst) return false;
@@ -272,7 +277,7 @@ bool RigLogicBodyConstraint::BuildBindings( std::uint16_t lod )
         ib.rawBase = i;
         // 输入节点：驱动关节与父级的全局 Rotation，局部在求值时反推。
         // 不用 Lcl Rotation：HIK 激活时其输出节点读到的是全局旋转
-        ib.node = AnimationNodeOutCreate( 1000 + i, m, ANIMATIONNODE_TYPE_ROTATION );
+        ib.node = AnimationNodeOutCreate( mNodeIdBase + 1000 + i, m, ANIMATIONNODE_TYPE_ROTATION );
         if (!ib.node) continue;   // 创建失败：跳过该驱动关节（否则求值时空指针）
         ib.parentNode = nullptr;
         if (FBModel* parent = m->Parent)
@@ -280,7 +285,7 @@ bool RigLogicBodyConstraint::BuildBindings( std::uint16_t lod )
             auto itParent = parentNodes.find( parent );
             if (itParent == parentNodes.end())
             {
-                const int parentUserId = 2000 + static_cast<int>( parentNodes.size() );
+                const int parentUserId = mNodeIdBase + 2000 + static_cast<int>( parentNodes.size() );
                 itParent = parentNodes.emplace(
                     parent, AnimationNodeOutCreate( parentUserId, parent, ANIMATIONNODE_TYPE_ROTATION ) ).first;
             }
@@ -328,9 +333,9 @@ bool RigLogicBodyConstraint::BuildBindings( std::uint16_t lod )
         const double neutralE[3] = { nr.x, nr.y, nr.z };
         ob.composeRot = NeedsNeutralCompose( preE, neutralE );
         EulerDegToQuat( neutralE, ob.qNeutral );
-        ob.nodeT = AnimationNodeInCreate( 3000 + j * 3 + 0, m, ANIMATIONNODE_TYPE_LOCAL_TRANSLATION );
-        ob.nodeR = AnimationNodeInCreate( 3000 + j * 3 + 1, m, ANIMATIONNODE_TYPE_LOCAL_ROTATION );
-        ob.nodeS = AnimationNodeInCreate( 3000 + j * 3 + 2, m, ANIMATIONNODE_TYPE_LOCAL_SCALING );
+        ob.nodeT = AnimationNodeInCreate( mNodeIdBase + 3000 + j * 3 + 0, m, ANIMATIONNODE_TYPE_LOCAL_TRANSLATION );
+        ob.nodeR = AnimationNodeInCreate( mNodeIdBase + 3000 + j * 3 + 1, m, ANIMATIONNODE_TYPE_LOCAL_ROTATION );
+        ob.nodeS = AnimationNodeInCreate( mNodeIdBase + 3000 + j * 3 + 2, m, ANIMATIONNODE_TYPE_LOCAL_SCALING );
         mOutputs.push_back( ob );
         const auto bindingIndex =
             static_cast<std::uint32_t>( mOutputs.size() - 1u );
@@ -358,9 +363,11 @@ bool RigLogicBodyConstraint::BuildBindings( std::uint16_t lod )
 void RigLogicBodyConstraint::SetupAllAnimationNodes()
 {
     if (!ReferenceGet( mGroupSkeleton, 0 )) return;
-    // 播放中不重建绑定/不重读 DNA：交给 UI 空闲，停止后补做
+    // 播放中不重建绑定/不重读 DNA：先立即失效旧绑定（节点可能已被 MoBu 销毁），
+    // 停止后由 UI 空闲补做。继续用旧绑定会解引用已释放的 connector（实测崩溃点）
     if (moburiglogic::IsTransportPlaying())
     {
+        InvalidateBindings();
         mRebuildPending = true;
         return;
     }
@@ -385,8 +392,9 @@ bool RigLogicBodyConstraint::RebuildBindings()
     // 播放/求值中重建会销毁并重建动画节点，与求值线程并发时可能崩——延后到停止后由 UI 空闲补做
     if (moburiglogic::IsTransportPlaying())
     {
+        InvalidateBindings();
         mRebuildPending = true;
-        return mBindingsReady;
+        return false;
     }
     mRebuildPending = false;
 
@@ -409,11 +417,18 @@ bool RigLogicBodyConstraint::RebuildBindings()
 
 void RigLogicBodyConstraint::RemoveAllAnimationNodes()
 {
+    // MoBu 正在拆我们的节点：必须在锁内清空，否则求值线程会继续解引用已释放节点
+    InvalidateBindings();
+}
+
+void RigLogicBodyConstraint::InvalidateBindings()
+{
+    std::lock_guard<std::mutex> lock( mSolveMutex );
     mInputs.clear();
     mOutputs.clear();
     mOutputRoutes.clear();
-    mLastEvalId = -1;
     mBindingsReady = false;
+    mLastEvalId = -1;
 }
 
 /************************************************

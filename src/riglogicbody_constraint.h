@@ -104,6 +104,7 @@ private:
 
     bool  LoadDna();                  // 读 DNA + 建 RigLogic/RigInstance
     void  ReleaseDna();
+    void  InvalidateBindings();       //!< 锁内清空绑定（MoBu 销毁节点后必须立即失效，否则会解引用已释放节点）
     std::uint16_t ResolveLod() const;
     bool  BuildBindings( std::uint16_t lod ); // 按骨架根扫描场景关节，建输入/输出映射
 
@@ -126,7 +127,9 @@ private:
 
     int  mGroupSkeleton = -1;         // Reference Group: 骨架根（挂 pelvis/root 均可）
     long mLastEvalId    = -1;         // 每求值ID只求解一次（多输出节点共享结果）
-    int  mAppliedLod    = -1;         // 当前绑定所用 LOD；UI 空闲时与 LodLevel 比对，变了即重建
+    int  mAppliedLod    = -1;         // 当前绑定所用 LOD；UI 空闲时比 LodLevel 比对，变了即重建
+    int  mStopIdleTicks = 0;          // 停播后的空闲周期计数：延迟补做重建，等在本飞行的求值排空
+    int  mNodeIdBase   = 0;           // 动画节点 UserId 基数：每次重建递增，避免与上一轮节点 ID 撞车
     bool mBindingsReady = false;
     bool mRebuildPending = false;      // 播放中请求过重建，停止后由 UI 空闲补做
     moburiglogic::DnaSource mDnaSource = moburiglogic::DnaSource::Property; // 当前 DNA 来源级别

@@ -232,9 +232,6 @@ bool RigLogicBodyConstraint::BuildBindings( std::uint16_t lod )
     mOutputRoutes.clear();
     mBindingsReady = false;
     mMissingBindings = 0;
-    // 每轮重建用新的 UserId 段：MoBu 在 ReferenceRemove/Add 后可能残留同名 ID 的旧节点，
-    // 复用同一个 ID 会让求值抓到已释放的 connector（实测崩溃）
-    mNodeIdBase += 10000;
 
     FBModel* skelRoot = (FBModel*)ReferenceGet( mGroupSkeleton, 0 );
     if (!skelRoot || !mReader || !mRig || !mInst) return false;
@@ -277,7 +274,7 @@ bool RigLogicBodyConstraint::BuildBindings( std::uint16_t lod )
         ib.rawBase = i;
         // 输入节点：驱动关节与父级的全局 Rotation，局部在求值时反推。
         // 不用 Lcl Rotation：HIK 激活时其输出节点读到的是全局旋转
-        ib.node = AnimationNodeOutCreate( mNodeIdBase + 1000 + i, m, ANIMATIONNODE_TYPE_ROTATION );
+        ib.node = AnimationNodeOutCreate( 1000 + i, m, ANIMATIONNODE_TYPE_ROTATION );
         if (!ib.node) continue;   // 创建失败：跳过该驱动关节（否则求值时空指针）
         ib.parentNode = nullptr;
         if (FBModel* parent = m->Parent)
@@ -285,7 +282,7 @@ bool RigLogicBodyConstraint::BuildBindings( std::uint16_t lod )
             auto itParent = parentNodes.find( parent );
             if (itParent == parentNodes.end())
             {
-                const int parentUserId = mNodeIdBase + 2000 + static_cast<int>( parentNodes.size() );
+                const int parentUserId = 2000 + static_cast<int>( parentNodes.size() );
                 itParent = parentNodes.emplace(
                     parent, AnimationNodeOutCreate( parentUserId, parent, ANIMATIONNODE_TYPE_ROTATION ) ).first;
             }
@@ -333,9 +330,9 @@ bool RigLogicBodyConstraint::BuildBindings( std::uint16_t lod )
         const double neutralE[3] = { nr.x, nr.y, nr.z };
         ob.composeRot = NeedsNeutralCompose( preE, neutralE );
         EulerDegToQuat( neutralE, ob.qNeutral );
-        ob.nodeT = AnimationNodeInCreate( mNodeIdBase + 3000 + j * 3 + 0, m, ANIMATIONNODE_TYPE_LOCAL_TRANSLATION );
-        ob.nodeR = AnimationNodeInCreate( mNodeIdBase + 3000 + j * 3 + 1, m, ANIMATIONNODE_TYPE_LOCAL_ROTATION );
-        ob.nodeS = AnimationNodeInCreate( mNodeIdBase + 3000 + j * 3 + 2, m, ANIMATIONNODE_TYPE_LOCAL_SCALING );
+        ob.nodeT = AnimationNodeInCreate( 3000 + j * 3 + 0, m, ANIMATIONNODE_TYPE_LOCAL_TRANSLATION );
+        ob.nodeR = AnimationNodeInCreate( 3000 + j * 3 + 1, m, ANIMATIONNODE_TYPE_LOCAL_ROTATION );
+        ob.nodeS = AnimationNodeInCreate( 3000 + j * 3 + 2, m, ANIMATIONNODE_TYPE_LOCAL_SCALING );
         mOutputs.push_back( ob );
         const auto bindingIndex =
             static_cast<std::uint32_t>( mOutputs.size() - 1u );

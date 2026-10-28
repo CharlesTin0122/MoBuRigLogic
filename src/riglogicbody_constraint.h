@@ -65,7 +65,8 @@ public:
     virtual bool FbxRetrieve( FBFbxObject* pFbxObject, kFbxObjectStore pStoreWhat ) override;
 
     //--- 属性
-    FBPropertyString  DnaPath;        //!< body.dna 文件路径
+    FBPropertyString  DnaPath;        //!< 当前实际使用的 body.dna 路径（回退命中时已写回）
+    FBPropertyString  SourceDnaPath;  //!< 只读：回退时被替换掉的路径（公司共享盘），用于回公司后自动恢复
     FBPropertyInt     LodLevel;       //!< 驱动集 LOD（默认 0）
     FBPropertyDouble  LastSolveMs;    //!< 只读：上次求解耗时(ms)，性能观测
 
@@ -75,7 +76,8 @@ public:
     size_t OutputCount()   const { return mOutputs.size(); }
     bool   DnaLoaded()     const { return mRig != nullptr; }
     double LastSolveMilliseconds() const { return mLastSolveMs.load(); }
-    bool   DnaFromSceneFolder() const { return mDnaFromSceneFolder; }  //!< DNA 来自 FBX 同目录兜底
+    bool   DnaFromSceneFolder() const { return mDnaSource == moburiglogic::DnaSource::SceneFolder; }
+    moburiglogic::DnaSource DnaSourceKind() const { return mDnaSource; }  //!< 当前 DNA 由哪一级候选命中
     int    MissingBindings()    const { return mMissingBindings; }      //!< 未在场景中找到的 DNA 关节数
     const std::string& ResolvedDnaPath() const { return mLoadedDnaPath; } //!< 实际加载的 DNA 文件
     bool   RebuildBindings();
@@ -126,7 +128,7 @@ private:
     long mLastEvalId    = -1;         // 每求值ID只求解一次（多输出节点共享结果）
     int  mAppliedLod    = -1;         // 当前绑定所用 LOD；UI 空闲时与 LodLevel 比对，变了即重建
     bool mBindingsReady = false;
-    bool mDnaFromSceneFolder = false;  // true=使用了 FBX 同目录的 body.dna
+    moburiglogic::DnaSource mDnaSource = moburiglogic::DnaSource::Property; // 当前 DNA 来源级别
     int  mMissingBindings = 0;         // 上次 BuildBindings 里未找到的 DNA 关节数（只告警）
 };
 

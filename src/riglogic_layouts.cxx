@@ -44,6 +44,15 @@ std::string MissingBindingLine( int missing )
     if (missing <= 0) return std::string();
     return "\nWarning: " + std::to_string( missing ) + " DNA joints not found in scene";
 }
+
+// 眼睛联动状态：CTRL_C_eye 不在 DNA 的 GUI 通道里，靠插件叠加到左右眼摇杆
+std::string EyeLinkLine( bool hasGuiInputs, bool linked, bool enabled )
+{
+    if (!hasGuiInputs) return std::string();
+    if (!linked) return "\nEye linkage: CTRL_C_eye not found";
+    return enabled ? "\nEye linkage: CTRL_C_eye -> L/R (tx,ty)"
+                   : "\nEye linkage: off (Eye Linkage unchecked)";
+}
 } // namespace
 
 // ================================================================= Head
@@ -201,6 +210,8 @@ void RigLogicHeadLayout::RefreshStatus()
                                mConstraint->ResolvedDnaPath(),
                                mConstraint->SourceDnaPath.AsString() );
         text += MissingBindingLine( mConstraint->MissingBindings() );
+        text += EyeLinkLine( mConstraint->GuiCount() > 0, mConstraint->EyeLinked(),
+                             static_cast<bool>( mConstraint->EyeLinkage ) );
     }
     SetIfChanged( mLabelStatus, text.c_str(), mStatusCache, sizeof(mStatusCache) );
 }

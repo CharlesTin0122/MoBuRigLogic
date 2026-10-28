@@ -232,6 +232,20 @@ int main()
     CHECK( !IsPanelFrameName( "GRP_FRM_x" ) );
     CHECK( !IsPanelFrameName( "frm_faceGUI" ) );
 
+    // ---- 眼睛摇杆夹紧：DNA GUI 域是 [-1,1]，越界会被映射外插成 0 ----
+    CHECK( ClampEyeStick( 0.0 ) == 0.0 );
+    CHECK( ClampEyeStick( 0.5 ) == 0.5 );
+    CHECK( ClampEyeStick( 1.0 ) == 1.0 );
+    CHECK( ClampEyeStick( -1.0 ) == -1.0 );
+    CHECK( ClampEyeStick( 1.05 ) == 1.0 );
+    CHECK( ClampEyeStick( 5.0 ) == 1.0 );
+    CHECK( ClampEyeStick( -1.5 ) == -1.0 );
+    // 双眼联动：L 0.3 + C 0.2 夹紧后应等于 0.5（与 Maya 角度相加等价）
+    CHECK( std::fabs( ClampEyeStick( 0.3 + 0.2 ) - 0.5 ) < 1e-9 );
+    CHECK( ClampEyeStick( 0.8 + 0.5 ) == 1.0 );
+    CHECK( ClampEyeStick( 0.5 + -0.5 ) == 0.0 );
+    CHECK( std::fabs( ClampEyeStick( 0.5 + -0.8 ) + 0.3 ) < 1e-9 );
+
     // ---- DNA 候选路径：属性路径优先，FBX 同目录固定文件名兑底 ----
     CHECK( DirectoryOf( "D:/shot/hero.fbx" ) == "D:/shot" );
     CHECK( DirectoryOf( "D:\\shot\\hero.fbx" ) == "D:\\shot" );

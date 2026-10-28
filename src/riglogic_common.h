@@ -172,6 +172,17 @@ enum class DnaSource : std::uint8_t {
     SceneFolder    // 命中了绑定 FBX 同目录的固定文件名
 };
 
+// ---- FaceBoard 眼睛摇杆 ----
+// CTRL_L_eye / CTRL_R_eye 在 DNA 的 GUI 通道里（CTRL_L_eye.tx/ty 等）；
+// CTRL_C_eye 不在 DNA 里，Maya 中靠 blendWeighted 把它的驱动角度与左右眼相加，
+// 等价于把它的位移直接叠到左右眼摇杆通道上。
+// DNA 的 GUI 域严格是 [-1, 1]，越界会被外插成 0（实测 tx=1.05 直接归零），
+// 叠加后必须夹紧，否则眼睛会瞬间回中。
+inline double ClampEyeStick( double value )
+{
+    return value > 1.0 ? 1.0 : (value < -1.0 ? -1.0 : value);
+}
+
 // FaceBoard 面板的框/背景模型（FRM_*）：锁定后不可在视图中选中，方便选 CTRL_* 控制器
 inline bool IsPanelFrameName( const std::string& name )
 {

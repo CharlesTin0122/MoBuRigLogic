@@ -48,6 +48,11 @@ using moburiglogic::QuatConj;
 // 绑定 FBX 同目录下的固定文件名：公司路径不可用时用来兜底（棚内/外拍常用）
 static const char* kSceneFolderDnaName = "head.dna";
 
+// FaceBoard 眼睛摇杆：左右眼在 DNA 的 GUI 通道里，中间那只不在（需手动叠回）
+static const char* kLeftEyeStick   = "CTRL_L_eye";
+static const char* kRightEyeStick  = "CTRL_R_eye";
+static const char* kCentreEyeStick = "CTRL_C_eye";
+
 bool RigLogicHeadConstraint::FBCreate()
 {
     FBPropertyPublish( this, DnaPath,     "DNA Path",      nullptr, nullptr );
@@ -56,10 +61,12 @@ bool RigLogicHeadConstraint::FBCreate()
     FBPropertyPublish( this, InputMode,   "Input Mode",    nullptr, nullptr );
     FBPropertyPublish( this, LastSolveMs, "Last Solve Ms", nullptr, nullptr );
     FBPropertyPublish( this, LockPanelFrames, "Lock Panel Frames", nullptr, nullptr );
+    FBPropertyPublish( this, EyeLinkage,   "Eye Linkage",   nullptr, nullptr );
     LodLevel = 0;
     InputMode = 0;   // 0=表情属性 1=FaceBoard面板
     LastSolveMs = 0.0;
     LockPanelFrames = false;
+    EyeLinkage = true;
 
     mGroupSkeleton = ReferenceGroupAdd( "Skeleton Root", 1 );
     Deformer = false;
@@ -290,6 +297,7 @@ void RigLogicHeadConstraint::ReleaseDna()
     moburiglogic::DestroyRigRuntime( old );
     mLoadedDnaPath.clear();
     mLoadedDnaPropertyPath.clear();
+    mEyeLinkNode = nullptr;
     mAppliedLod = -1;
 }
 
@@ -308,6 +316,7 @@ bool RigLogicHeadConstraint::BuildBindings( std::uint16_t lod )
     mJointOutputs.clear();
     mBsOutputs.clear();
     mOutputRoutes.clear();
+    mEyeLinkNode = nullptr;
     mBindingsReady = false;
     mMissingBindings = 0;
 
@@ -358,10 +367,18 @@ bool RigLogicHeadConstraint::BuildBindings( std::uint16_t lod )
             GuiInput gi;
             gi.guiIndex = g;
             gi.axis = axis;
+            gi.eyeStick = ( ctrlName == kLeftEyeStick || ctrlName == kRightEyeStick );
             gi.node = AnimationNodeOutCreate( 500 + g, itModel->second,
                                               ANIMATIONNODE_TYPE_LOCAL_TRANSLATION );
             mGuiInputs.push_back( gi );
         }
+
+        // 双眼联动：CTRL_C_eye 不在 DNA 的 GUI 通道里（只有 CTRL_C_eye_parallelLook），
+        // 单独读它的位移，求值时叠加到左右眼摇杆上
+        auto itCEye = models.find( kCentreEyeStick );
+        if (itCEye != models.end())
+            mEyeLinkNode = AnimationNodeOutCreate( 900, itCEye->second,
+                                                   ANIMATIONNODE_TYPE_LOCAL_TRANSLATION );
     }
 
     const std::uint16_t rawCount = mReader->getRawControlCount();
@@ -585,6 +602,7 @@ void RigLogicHeadConstraint::RemoveAllAnimationNodes()
     mJointOutputs.clear();
     mBsOutputs.clear();
     mOutputRoutes.clear();
+    mEyeLinkNode = nullptr;
     mLastEvalId = -1;
     mBindingsReady = false;
 }
@@ -609,11 +627,22 @@ bool RigLogicHeadConstraint::AnimationNodeNotify( FBAnimationNode* pConnector,
 
         // FaceBoard 模式：面板位移；表情属性模式：属性值（支持K帧动画取值）
         std::vector<float> guiValues( mGuiInputs.size() );
+        // 眼睛联动：CTRL_C_eye 的位移与左右眼摇杆在 Maya 里是角度相加（blendWeighted），
+        // DNA 的摇杆→激活值映射在 [-1,1] 内是线性的，所以直接在摇杆域相加等价
+        double eyeLink[3] = { 0.0, 0.0, 0.0 };
+        const bool eyeLinkOn = mEyeLinkNode && static_cast<bool>( EyeLinkage );
+        if (eyeLinkOn) mEyeLinkNode->ReadData( eyeLink, pEvaluateInfo );
         for (std::size_t i = 0; i < mGuiInputs.size(); ++i)
         {
             double t[3] = { 0, 0, 0 };
             mGuiInputs[i].node->ReadData( t, pEvaluateInfo );
-            guiValues[i] = static_cast<float>( t[ mGuiInputs[i].axis ] );
+            double v = t[ mGuiInputs[i].axis ];
+            if (mGuiInputs[i].eyeStick)
+            {
+                if (eyeLinkOn) v += eyeLink[ mGuiInputs[i].axis ];
+                v = moburiglogic::ClampEyeStick( v );   // DNA 域是 [-1,1]，越界会被外插成 0
+            }
+            guiValues[i] = static_cast<float>( v );
         }
         std::vector<float> exprValues;
         if (mGuiInputs.empty())

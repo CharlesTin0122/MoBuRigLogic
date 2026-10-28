@@ -35,7 +35,7 @@ private:
     void EventIdle     ( HISender pSender, HKEvent pEvent );
 
     RigLogicHeadConstraint* mConstraint = nullptr;
-    char mStatusCache[512] = {0};
+    char mStatusCache[1024] = {0};
     int  mIdleCounter = 0;
 
     FBLabel   mLabelDna;

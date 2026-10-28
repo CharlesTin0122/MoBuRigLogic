@@ -77,6 +77,16 @@ foreach(content_var head_content body_content)
 endforeach()
 assert_contains("${head_content}" "kSceneFolderDnaName = \"head.dna\"" "Head scene-folder DNA name")
 assert_contains("${body_content}" "kSceneFolderDnaName = \"body.dna\"" "Body scene-folder DNA name")
+
+# 眼睛联动：CTRL_C_eye 不在 DNA GUI 通道里，插件叠到左右眼摇杆上并夹紧
+assert_contains("${head_content}" "kCentreEyeStick = \"CTRL_C_eye\"" "Head eye linkage centre stick")
+assert_contains("${head_content}" "gi.eyeStick = ( ctrlName == kLeftEyeStick || ctrlName == kRightEyeStick )" "Head eye stick tagging")
+assert_contains("${head_content}" "mEyeLinkNode->ReadData( eyeLink, pEvaluateInfo )" "Head eye linkage read")
+assert_contains("${head_content}" "moburiglogic::ClampEyeStick( v )" "Head eye stick clamp")
+assert_contains("${head_content}" "if (eyeLinkOn) v += eyeLink[ mGuiInputs[i].axis ]" "Head eye linkage sum")
+assert_contains("${head_content}" [=["Eye Linkage"]=] "Eye Linkage property")
+assert_contains("${layout_content}" "EyeLinkLine(" "Eye linkage status line")
+assert_not_contains("${body_content}" "EyeLinkage" "body constraint has no eye linkage")
 assert_contains("${body_content}" "ComposeJointRotation(" "Body neutral-compose rotation output")
 assert_contains("${head_content}" "ComposeJointRotation(" "Head neutral-compose rotation output")
 

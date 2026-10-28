@@ -32,7 +32,7 @@ C++ 类型：`RigLogicHeadConstraint`
 - 从 `head.dna` 创建 RigLogic 和 RigInstance。
 - 支持两种表情输入模式：
   - `Expression Properties`：在约束自身创建可 K 帧的动态表情属性。
-  - `FaceBoard Panel`：读取场景中的 `CTRL_*` GUI 控制器。
+  - `FaceBoard Panel`：读取场景中的 `CTRL_*` GUI 控制器（含眼睛摇杆联动，见[眼睛摇杆联动](#眼睛摇杆联动)）。
 - 自动读取头部 DNA 所需的颈部和头部局部旋转。
 - 输出面部关节的局部平移与旋转。
 - 根据 DNA 的 mesh-channel mapping 输出 BlendShape 权重。
@@ -305,6 +305,50 @@ ctest --test-dir build -C Release --output-on-failure
 
 ## 属性说明
 
+### 眼睛摇杆联动
+
+FaceBoard 面板上有三个眼睛摇杆：`CTRL_L_eye`、`CTRL_R_eye`（单眼）和 `CTRL_C_eye`（双眼）。三者在 Maya 里**不是父子关系**，而是在下游汇合：
+
+```text
+CTRL_L_eye.tx ─→ 角度曲线 ─┐
+                          ├→ 相加（blendWeighted）→ 左眼注视驱动 locator 角度 → eyeLook* 激活值
+CTRL_C_eye.tx ─→ 角度曲线 ─┘
+右眼同理（另一套曲线 + 另一个 blendWeighted）
+```
+
+即：`CTRL_C_eye` 的贡献是**与左右眼摇杆在角度空间相加**，相加结果再经“角度 → 0~1”映射成 DNA 的 `eyeLookLeft/Right/Up/Down` 通道。
+
+MoBu 侧现状与处理：
+
+| 通道 | DNA 里有没有 | MoBu 实现 |
+| --- | --- | --- |
+| `CTRL_L_eye.tx/ty`、`CTRL_R_eye.tx/ty` | 有（GUI 通道） | 插件 FaceBoard 模式直接驱动，与 Maya 逐值一致 |
+| `CTRL_C_eye.tx/ty` | **没有**（只有 `CTRL_C_eye_parallelLook.ty`） | 插件读它的 `Lcl Translation`，叠加到左右眼两条 GUI 通道上 |
+| `CTRL_C_eyesAim` / `CTRL_L_eyeAim` / `CTRL_R_eyeAim` | 无 | MoBu 的绑定里不存在，3D 注视控制需另做方案 |
+
+实现细节：
+
+- 叠加发生在**摇杆域**：`左右眼通道值 = clamp(L/R 摇杆 + C 摇杆, -1, 1)`。因为 DNA 的“摇杆值 → 激活值”在 [-1,1] 内是线性的，摇杆域相加与 Maya 的角度域相加等价。
+- **必须夹紧**：摇杆量程就是 ±1（满激活），DNA 对超出 [-1,1] 的输入会外插成 0（实测 `tx=1.05` 眼睛直接回中），所以插件对左右眼通道统一 clamp。
+- 关闭联动：约束属性 `Eye Linkage` 设为 `0`（或 Python `constraint.EyeLinkage = False`）。
+- 状态区显示 `Eye linkage: CTRL_C_eye -> L/R (tx,ty)`；找不到 `CTRL_C_eye` 时显示 `CTRL_C_eye not found` 并在日志记一次。
+- `CTRL_C_eye` 必须与 `Skeleton Root` 同 namespace，多角色场景不会串角色（与现有绑定规则一致）。
+
+与 Maya 的实测对照（`FACIAL_*_Eye` 的 Lcl Rotation，单位度）：
+
+| 输入 | Maya 左眼 / 右眼 | MoBu 左眼 / 右眼 |
+| --- | --- | --- |
+| `CTRL_L_eye.tx=0.5` | (0, 21.1085) / 0 | 一致 |
+| `CTRL_R_eye.tx=0.5` | 0 / (0, 18.7924) | 一致 |
+| `CTRL_L_eye.ty=0.5` | (−14.7593, 0.1072) / 0 | 一致 |
+| `CTRL_C_eye.tx=0.5` | (0, 21.1085) / (0, 18.7924) | 一致（联动叠加） |
+| `CTRL_L_eye.tx=0.3 + CTRL_C_eye.tx=0.2` | (0, 21.1085) / (0, 7.5170) | 一致（等价于 `tx=0.5`） |
+| `CTRL_C_eye.ty=0.5` | (−14.7593, 0.1072) / (−14.8516, 0) | 一致 |
+| `CTRL_L_eye.ty=0.5 + CTRL_C_eye.ty=0.25` | (−22.1389, 0.1609) / (−7.4258, 0) | 一致 |
+| `CTRL_L_eye.tx=0.8 + CTRL_C_eye.tx=0.5`（溢出） | (0, 42.2170) / (0, 18.7924) | 一致（夹紧到 1.0 后饱和） |
+
+已知差异：Maya 在摇杆之和超过 ±1 时，`LOC_*_eyeUIDriver` 的角度会继续放大（例如 80°），但注视激活值同样饱和在 1；MoBu 侧以激活值为准，所以眼球不会“过转”。正常作画范围（±1 以内）无差异。
+
 ### 共同属性
 
 | 属性                                | 说明                                                                     |
@@ -319,6 +363,7 @@ ctest --test-dir build -C Release --output-on-failure
 | 属性                       | 说明                                            |
 | -------------------------- | ----------------------------------------------- |
 | `Input Mode` / `InputMode` | `0` 为动态表情属性，`1` 为 FaceBoard GUI 控制器 |
+| `Eye Linkage` / `EyeLinkage` | `1`（默认）：把 `CTRL_C_eye` 的位移叠加到左右眼摇杆，复现 Maya 的双眼联动；`0` 关闭联动，只读 `CTRL_L_eye` / `CTRL_R_eye` |
 
 不同 MetaHuman DNA 的输入、输出、LOD 和 BlendShape 数量可能不同。README 不把某个角色的固定数量作为所有 DNA 的保证。
 

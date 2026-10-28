@@ -133,10 +133,16 @@ inline std::string JoinPath( const std::string& dir, const std::string& fileName
     return dir + sep + fileName;
 }
 
-// DNA 候选路径（按尝试顺序）：属性路径优先，绑定 FBX 同目录的固定文件名兜底。
-// 棚内没有公司共享盘时，只要把 body.dna/head.dna 放到 FBX 旁边即可正常工作。
-// 去重并忽略空串：两者指向同一文件时不重复读取
+// DNA 候选路径（按尝试顺序）：属性路径 → 上次被替换的路径 → 绑定 FBX 同目录固定文件名。
+//
+// 为什么要三级：回退命中后会把实际路径写回 DNA Path 属性，公司设定的原路径
+// 于是被挤到“上次被替换的路径”里（随 FBX 保存）。回公司后棚内路径失效，
+// 第二级把它恢复回来，公司↔棚内双向自动往返。
+// 第二级必须排在场景目录之前：公司机器上若 FBX 旁边另有 DNA，
+// 不能挤掉仍然可用的公司路径。
+// 去重并忽略空串：多个候选指向同一文件时不重复读取
 inline std::vector<std::string> DnaCandidates( const std::string& primaryPath,
+                                               const std::string& previousPath,
                                                const std::string& sceneFilePath,
                                                const char* sceneFolderFileName )
 {
@@ -148,6 +154,7 @@ inline std::vector<std::string> DnaCandidates( const std::string& primaryPath,
         candidates.push_back( candidate );
     };
     add( primaryPath );
+    add( previousPath );
     // 场景未存盘 / 场景路径无目录部分时不产生兜底候选：
     // 拼出裸文件名 "body.dna" 会变成相对 MoBu 当前工作目录的路径，命中与否不可预测
     if (sceneFolderFileName && *sceneFolderFileName)
@@ -157,6 +164,13 @@ inline std::vector<std::string> DnaCandidates( const std::string& primaryPath,
     }
     return candidates;
 }
+
+// 候选命中结果：哪一级生效（界面显示与日志用）
+enum class DnaSource : std::uint8_t {
+    Property,      // DNA Path 属性直接命中
+    Previous,      // 命中了上次被替换的路径（从棚内回公司时发生）
+    SceneFolder    // 命中了绑定 FBX 同目录的固定文件名
+};
 
 // FaceBoard 面板的框/背景模型（FRM_*）：锁定后不可在视图中选中，方便选 CTRL_* 控制器
 inline bool IsPanelFrameName( const std::string& name )

@@ -84,16 +84,18 @@ void RigLogicHeadConstraint::EventUIIdle( HISender, HKEvent )
     // LOD 改动即时生效：驱动集/BS 映射随 LOD 变化，需重建绑定（不止 setLOD）。
     // 先记下目标 LOD 再重建，重建失败也不会每个空闲周期反复重试。
     // 播放中不重建，也不记 mAppliedLod，停止后自然会再触发一次
+    const bool playing = moburiglogic::IsTransportPlaying();
+    mStopIdleTicks = playing ? 0 : (mStopIdleTicks + 1);   // 停播后累计空闲周期，等在本飞行求值排空
     const int lod = static_cast<int>( LodLevel );
     if (mRig && mAppliedLod >= 0 && lod != mAppliedLod
-        && !moburiglogic::IsTransportPlaying())
+        && !playing && mStopIdleTicks >= 10)
     {
         mAppliedLod = lod;
         RebuildBindings();
     }
 
-    // 播放中挂起的重建：停止后补做一次
-    if (mRebuildPending && !moburiglogic::IsTransportPlaying())
+    // 播放中挂起的重建：等停播且空闲稳定后再补做，避开“停播瞬间求值未完全结束”
+    if (mRebuildPending && !playing && mStopIdleTicks >= 10)
     {
         mRebuildPending = false;
         RebuildBindings();
@@ -328,6 +330,9 @@ bool RigLogicHeadConstraint::BuildBindings( std::uint16_t lod )
     mEyeLinkNode = nullptr;
     mBindingsReady = false;
     mMissingBindings = 0;
+    // 每轮重建用新的 UserId 段：MoBu 在 ReferenceRemove/Add 后可能残留同名 ID 的旧节点，
+    // 复用同一个 ID 会让求值抓到已释放的 connector（实测崩溃）
+    mNodeIdBase += 10000;
 
     FBModel* skelRoot = (FBModel*)ReferenceGet( mGroupSkeleton, 0 );
     if (!skelRoot || !mReader || !mRig || !mInst) return false;
@@ -377,7 +382,7 @@ bool RigLogicHeadConstraint::BuildBindings( std::uint16_t lod )
             gi.guiIndex = g;
             gi.axis = axis;
             gi.eyeStick = ( ctrlName == kLeftEyeStick || ctrlName == kRightEyeStick );
-            gi.node = AnimationNodeOutCreate( 500 + g, itModel->second,
+            gi.node = AnimationNodeOutCreate( mNodeIdBase + 500 + g, itModel->second,
                                               ANIMATIONNODE_TYPE_LOCAL_TRANSLATION );
             if (!gi.node) continue;   // 创建失败：跳过该通道（否则求值时空指针）
             mGuiInputs.push_back( gi );
@@ -387,7 +392,7 @@ bool RigLogicHeadConstraint::BuildBindings( std::uint16_t lod )
         // 单独读它的位移，求值时叠加到左右眼摇杆上
         auto itCEye = models.find( kCentreEyeStick );
         if (itCEye != models.end())
-            mEyeLinkNode = AnimationNodeOutCreate( 900, itCEye->second,
+            mEyeLinkNode = AnimationNodeOutCreate( mNodeIdBase + 900, itCEye->second,
                                                    ANIMATIONNODE_TYPE_LOCAL_TRANSLATION );
     }
 
@@ -422,11 +427,11 @@ bool RigLogicHeadConstraint::BuildBindings( std::uint16_t lod )
 
             NeckInput ni;
             ni.rawBase = i;
-            ni.node = AnimationNodeOutCreate( 1000 + i, itModel->second,
+            ni.node = AnimationNodeOutCreate( mNodeIdBase + 1000 + i, itModel->second,
                                               ANIMATIONNODE_TYPE_ROTATION );
             if (!ni.node) continue;   // 创建失败：跳过该关节
             ni.parentNode = itModel->second->Parent
-                ? AnimationNodeOutCreate( 2000 + i, itModel->second->Parent,
+                ? AnimationNodeOutCreate( mNodeIdBase + 2000 + i, itModel->second->Parent,
                                           ANIMATIONNODE_TYPE_ROTATION )
                 : nullptr;
             auto nr = mReader->getNeutralJointRotation( itJoint->second );
@@ -467,8 +472,8 @@ bool RigLogicHeadConstraint::BuildBindings( std::uint16_t lod )
         jo.composeRot = NeedsNeutralCompose( preE, neutralE );
         EulerDegToQuat( neutralE, jo.qNeutral );
 
-        jo.nodeT = AnimationNodeInCreate( 3000 + j*3 + 0, m, ANIMATIONNODE_TYPE_LOCAL_TRANSLATION );
-        jo.nodeR = AnimationNodeInCreate( 3000 + j*3 + 1, m, ANIMATIONNODE_TYPE_LOCAL_ROTATION );
+        jo.nodeT = AnimationNodeInCreate( mNodeIdBase + 3000 + j*3 + 0, m, ANIMATIONNODE_TYPE_LOCAL_TRANSLATION );
+        jo.nodeR = AnimationNodeInCreate( mNodeIdBase + 3000 + j*3 + 1, m, ANIMATIONNODE_TYPE_LOCAL_ROTATION );
         jo.nodeS = nullptr;   // head.dna 无缩放输出（实测 s:0）
         mJointOutputs.push_back( jo );
         const auto bindingIndex =
@@ -539,7 +544,7 @@ bool RigLogicHeadConstraint::BuildBindings( std::uint16_t lod )
             continue;
         }
 
-        const auto userId = static_cast<int>( 6000u + mappingOrdinal );
+        const auto userId = mNodeIdBase + static_cast<int>( 6000u + mappingOrdinal );
         FBAnimationNode* node = AnimationNodeInCreate( userId, property );
         if (node) {
             mBsOutputs.push_back( { node, mapping.channelIndex } );
@@ -570,9 +575,11 @@ bool RigLogicHeadConstraint::BuildBindings( std::uint16_t lod )
 void RigLogicHeadConstraint::SetupAllAnimationNodes()
 {
     if (!ReferenceGet( mGroupSkeleton, 0 )) return;
-    // 播放中不重建绑定/不重读 DNA：交给 UI 空闲，停止后补做
+    // 播放中不重建绑定/不重读 DNA：先立即失效旧绑定（节点可能已被 MoBu 销毁），
+    // 停止后由 UI 空闲补做。继续用旧绑定会解引用已释放的 connector（实测崩溃点）
     if (moburiglogic::IsTransportPlaying())
     {
+        InvalidateBindings();
         mRebuildPending = true;
         return;
     }
@@ -597,8 +604,9 @@ bool RigLogicHeadConstraint::RebuildBindings()
     // 播放/求值中重建会销毁并重建动画节点，与求值线程并发时可能崩——延后到停止后由 UI 空闲补做
     if (moburiglogic::IsTransportPlaying())
     {
+        InvalidateBindings();
         mRebuildPending = true;
-        return mBindingsReady;
+        return false;
     }
     mRebuildPending = false;
 
@@ -621,6 +629,13 @@ bool RigLogicHeadConstraint::RebuildBindings()
 
 void RigLogicHeadConstraint::RemoveAllAnimationNodes()
 {
+    // MoBu 正在拆我们的节点：必须在锁内清空，否则求值线程会继续解引用已释放节点
+    InvalidateBindings();
+}
+
+void RigLogicHeadConstraint::InvalidateBindings()
+{
+    std::lock_guard<std::mutex> lock( mSolveMutex );
     mExprInputs.clear();
     mGuiInputs.clear();
     mNeckInputs.clear();
@@ -628,8 +643,8 @@ void RigLogicHeadConstraint::RemoveAllAnimationNodes()
     mBsOutputs.clear();
     mOutputRoutes.clear();
     mEyeLinkNode = nullptr;
-    mLastEvalId = -1;
     mBindingsReady = false;
+    mLastEvalId = -1;
 }
 
 bool RigLogicHeadConstraint::AnimationNodeNotify( FBAnimationNode* pConnector,

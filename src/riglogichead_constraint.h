@@ -63,6 +63,7 @@ public:
     FBPropertyInt     InputMode;      //!< 0=表情属性(可K帧) 1=FaceBoard面板(GUI控制器)
     FBPropertyDouble  LastSolveMs;    //!< 只读：上次求解耗时
     FBPropertyBool    LockPanelFrames;//!< 1=面板 FRM_* 不可选中（Enable Selection 关），方便选 CTRL_*
+    FBPropertyBool    EyeLinkage;     //!< 1=CTRL_C_eye 位移叠加到左右眼摇杆（Maya 的双眼联动）
 
     //--- Layout 查询/操作接口
     bool   BindingsReady() const { return mBindingsReady; }
@@ -74,6 +75,7 @@ public:
     bool   DnaLoaded()     const { return mRig != nullptr; }
     double LastSolveMilliseconds() const { return mLastSolveMs.load(); }
     bool   DnaFromSceneFolder() const { return mDnaSource == moburiglogic::DnaSource::SceneFolder; }
+    bool   EyeLinked()     const { return mEyeLinkNode != nullptr; }   //!< 已绑定 CTRL_C_eye 联动摇杆
     moburiglogic::DnaSource DnaSourceKind() const { return mDnaSource; }  //!< 当前 DNA 由哪一级候选命中
     int    MissingBindings()    const { return mMissingBindings; }      //!< 未在场景中找到的 DNA 关节数
     const std::string& ResolvedDnaPath() const { return mLoadedDnaPath; } //!< 实际加载的 DNA 文件
@@ -93,6 +95,7 @@ private:
         FBAnimationNode* node;
         std::uint16_t    guiIndex;    // DNA GUI control 下标
         int              axis;        // 0=tx 1=ty 2=tz
+        bool             eyeStick;    // 左右眼摇杆：需要叠加 CTRL_C_eye 并夹紧
     };
     struct NeckInput {                // 颈部四元数：由全局旋转反推局部（HIK 激活时 Lcl 节点读到全局）
         FBAnimationNode* node;        // 关节全局 Rotation
@@ -131,6 +134,7 @@ private:
 
     std::vector<ExprInput>   mExprInputs;
     std::vector<GuiInput>    mGuiInputs;
+    FBAnimationNode*         mEyeLinkNode = nullptr;  // CTRL_C_eye 的 Lcl Translation（双眼联动）
     std::vector<NeckInput>   mNeckInputs;
     std::vector<JointOutput> mJointOutputs;
     std::vector<BsOutput>    mBsOutputs;

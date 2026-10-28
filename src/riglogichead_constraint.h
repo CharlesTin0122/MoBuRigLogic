@@ -149,7 +149,6 @@ private:
     long mLastEvalId    = -1;
     int  mAppliedLod    = -1;         // 当前绑定所用 LOD；UI 空闲时与 LodLevel 比对，变了即重建
     int  mStopIdleTicks = 0;          // 停播后的空闲周期计数：延迟补做重建，等在本飞行的求值排空
-    int  mNodeIdBase   = 0;           // 动画节点 UserId 基数：每次重建递增，避免与上一轮节点 ID 撞车
     int  mAppliedFrameLock = -1;      // 已应用的 LockPanelFrames；-1=尚未记录（首个空闲周期只记录不改场景）
     bool mBindingsReady = false;
     bool mRebuildPending = false;      // 播放中请求过重建，停止后由 UI 空闲补做

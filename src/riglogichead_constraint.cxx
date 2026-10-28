@@ -330,9 +330,6 @@ bool RigLogicHeadConstraint::BuildBindings( std::uint16_t lod )
     mEyeLinkNode = nullptr;
     mBindingsReady = false;
     mMissingBindings = 0;
-    // 每轮重建用新的 UserId 段：MoBu 在 ReferenceRemove/Add 后可能残留同名 ID 的旧节点，
-    // 复用同一个 ID 会让求值抓到已释放的 connector（实测崩溃）
-    mNodeIdBase += 10000;
 
     FBModel* skelRoot = (FBModel*)ReferenceGet( mGroupSkeleton, 0 );
     if (!skelRoot || !mReader || !mRig || !mInst) return false;
@@ -382,7 +379,7 @@ bool RigLogicHeadConstraint::BuildBindings( std::uint16_t lod )
             gi.guiIndex = g;
             gi.axis = axis;
             gi.eyeStick = ( ctrlName == kLeftEyeStick || ctrlName == kRightEyeStick );
-            gi.node = AnimationNodeOutCreate( mNodeIdBase + 500 + g, itModel->second,
+            gi.node = AnimationNodeOutCreate( 500 + g, itModel->second,
                                               ANIMATIONNODE_TYPE_LOCAL_TRANSLATION );
             if (!gi.node) continue;   // 创建失败：跳过该通道（否则求值时空指针）
             mGuiInputs.push_back( gi );
@@ -392,7 +389,7 @@ bool RigLogicHeadConstraint::BuildBindings( std::uint16_t lod )
         // 单独读它的位移，求值时叠加到左右眼摇杆上
         auto itCEye = models.find( kCentreEyeStick );
         if (itCEye != models.end())
-            mEyeLinkNode = AnimationNodeOutCreate( mNodeIdBase + 900, itCEye->second,
+            mEyeLinkNode = AnimationNodeOutCreate( 900, itCEye->second,
                                                    ANIMATIONNODE_TYPE_LOCAL_TRANSLATION );
     }
 
@@ -427,11 +424,11 @@ bool RigLogicHeadConstraint::BuildBindings( std::uint16_t lod )
 
             NeckInput ni;
             ni.rawBase = i;
-            ni.node = AnimationNodeOutCreate( mNodeIdBase + 1000 + i, itModel->second,
+            ni.node = AnimationNodeOutCreate( 1000 + i, itModel->second,
                                               ANIMATIONNODE_TYPE_ROTATION );
             if (!ni.node) continue;   // 创建失败：跳过该关节
             ni.parentNode = itModel->second->Parent
-                ? AnimationNodeOutCreate( mNodeIdBase + 2000 + i, itModel->second->Parent,
+                ? AnimationNodeOutCreate( 2000 + i, itModel->second->Parent,
                                           ANIMATIONNODE_TYPE_ROTATION )
                 : nullptr;
             auto nr = mReader->getNeutralJointRotation( itJoint->second );
@@ -472,8 +469,8 @@ bool RigLogicHeadConstraint::BuildBindings( std::uint16_t lod )
         jo.composeRot = NeedsNeutralCompose( preE, neutralE );
         EulerDegToQuat( neutralE, jo.qNeutral );
 
-        jo.nodeT = AnimationNodeInCreate( mNodeIdBase + 3000 + j*3 + 0, m, ANIMATIONNODE_TYPE_LOCAL_TRANSLATION );
-        jo.nodeR = AnimationNodeInCreate( mNodeIdBase + 3000 + j*3 + 1, m, ANIMATIONNODE_TYPE_LOCAL_ROTATION );
+        jo.nodeT = AnimationNodeInCreate( 3000 + j*3 + 0, m, ANIMATIONNODE_TYPE_LOCAL_TRANSLATION );
+        jo.nodeR = AnimationNodeInCreate( 3000 + j*3 + 1, m, ANIMATIONNODE_TYPE_LOCAL_ROTATION );
         jo.nodeS = nullptr;   // head.dna 无缩放输出（实测 s:0）
         mJointOutputs.push_back( jo );
         const auto bindingIndex =
@@ -544,7 +541,7 @@ bool RigLogicHeadConstraint::BuildBindings( std::uint16_t lod )
             continue;
         }
 
-        const auto userId = mNodeIdBase + static_cast<int>( 6000u + mappingOrdinal );
+        const auto userId = static_cast<int>( 6000u + mappingOrdinal );
         FBAnimationNode* node = AnimationNodeInCreate( userId, property );
         if (node) {
             mBsOutputs.push_back( { node, mapping.channelIndex } );

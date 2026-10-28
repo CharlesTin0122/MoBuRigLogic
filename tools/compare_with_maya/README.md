@@ -13,9 +13,11 @@
 
 | profile | 输入 | 采集输出 | 判定指标 |
 | --- | --- | --- | --- |
-| `body` | 44 根 DNA raw control 驱动骨骼的局部欧拉增量 | 258 根修形关节（世界矩阵 + 本地 TRS） | 关节世界位置动态偏差、旋转输出偏差 |
+| `body` | 44 根 DNA raw control 驱动骨骼的局部欧拉增量，35 个定向姿势 | 258 根修形关节（世界矩阵 + 本地 TRS） | 关节世界位置动态偏差、旋转输出偏差 |
+| `body_sweep` | 同上，但 44 根驱动骨骼 **逐根逐轴 ±45°**（265 个姿势） | 同上 | 同上 |
 | `face` | FaceBoard 控制器 `CTRL_*` 的 translate（0..1），27 个定向姿势（含眼球朝向） | 840 根 `FACIAL_*` 关节、858 个 BlendShape 通道、5 个 DNA 网格 | 关节位置/旋转增量、BlendShape 权重 |
 | `face_sweep` | 同上，但逐个控制器单独摆到 1.0（Maya 自动发现控制器） | 同上 | 同上 |
+| `head` | `neck_01` / `neck_02` / `head` 的局部旋转（head.dna 的颈部输入），16 个姿势 | 同上（面部输出） | 同上 |
 
 两侧输入路径不同但等价：
 
@@ -28,9 +30,11 @@
 
 ```text
 tools\compare_with_maya\
-├─ poses.json             # body 姿态表
-├─ poses_face.json        # face 定向姿态表
+├─ poses.json             # body 定向姿态表
+├─ poses_body_sweep.json  # body 全驱动扫描配置（±45°）
+├─ poses_face.json        # face 定向姿态表（含眼球朝向）
 ├─ poses_face_sweep.json  # face_sweep 配置（扫描值、跳过列表）
+├─ poses_head.json        # head（颈部/头部）姿态表
 ├─ capture.py             # 采样实现（profile 化，兼容 Maya py3 与 MoBu py2.7）
 ├─ run_maya.py            # Maya 侧入口
 ├─ run_mobu.py            # MoBu 侧入口
@@ -66,8 +70,10 @@ runpy.run_path(r"D:\Code\MoBuRigLogic\tools\compare_with_maya\run_mobu.py", run_
 
 ```powershell
 python tools\compare_with_maya\compare.py --profile body
+python tools\compare_with_maya\compare.py --profile body_sweep
 python tools\compare_with_maya\compare.py --profile face
 python tools\compare_with_maya\compare.py --profile face_sweep
+python tools\compare_with_maya\compare.py --profile head
 ```
 
 默认 profile 是 `body`。切换 profile 时在应用里设置环境变量：
@@ -97,7 +103,8 @@ python tools\compare_with_maya\compare.py --profile body --out-dir D:\tmp\cmp
 | profile | 位置 | 旋转 | BlendShape（0..100） |
 | --- | --- | --- | --- |
 | `body` | 0.8 mm | 0.6° | — |
-| `face` / `face_sweep` | 0.01 mm | 0.01° | 0.01 |
+| `body_sweep` | 1.5 mm | 3.5° | — |
+| `face` / `face_sweep` / `head` | 0.01 mm | 0.01° | 0.01 |
 
 > 采样脚本会临时改写骨骼/控制器属性（面部还会临时解锁 FaceBoard 的通道锁），结束时自动还原；
 > 但 Maya 场景会被标记为“已修改”，不要在采样过程中保存场景。MoBu 侧同理。
@@ -116,10 +123,25 @@ python tools\compare_with_maya\compare.py --profile body --out-dir D:\tmp\cmp
 | 腿部（髋/膝/踝） | 0.000 mm |
 | 躯干/锁骨、上臂/前臂、手腕 | ≤0.05 mm |
 
-已知差异：8 根手指 `_half_`（半段/twist 类）辅助关节存在最大 1.07° 的静置旋转差，
-响应增益有约 4% 差异，沿手指链放大到 0.7 mm。已排除 DNA/LOD、驱动骨骼属性基准、
+已知差异：8 根手指 `_half_`（半段/twist 类）辅助关节存在静置旋转差（最大 1.07°），
+响应增益有约 4% 差异，沿手指链放大。已排除 DNA/LOD、驱动骨骼属性基准、
 链上非均匀缩放、ML 行为、平移/缩放通路等因素；两侧 riglogic 二进制不同
 （Maya 内置版 vs OpenRigLogic 13.2.5）+ 插件自建的 raw control 反推路径是最可能的原因。
+
+### body_sweep（44 根驱动骨骼 × 3 轴 × ±45°，265 姿势）
+
+定向姿势只跳着摆了部分驱动骨骼，**全驱动扫描后差异比 `body` 更大**：
+
+| 指标 | 实测 |
+| --- | --- |
+| 驱动骨骼姿态偏差 | 0.00014 mm |
+| 修形关节动态位置差 | 1.175 mm（`middle_01_palm_r`） |
+| 修形旋转输出差 | 2.843° |
+| 腿部、躯干/锁骨、上臂/前臂、手腕 | 0.000 mm（全部 44 根驱动、±45° 下仍逐位一致） |
+| 手指 | 1.175 mm / 2.843° |
+
+最大差异出现在手指的 Z 轴（twist）拧到 ±45° 时：`middle_01_l/r`、`index_03`、`middle_03`、
+`ring_02/03` 这些带动 `_half_` 修形的关节。这也说明**扭曲类输入越饱和，两侧增益差越明显**。
 
 ### face（27 姿势，含 `CTRL_L_eye` / `CTRL_R_eye` 的眼球朝向）
 
@@ -147,11 +169,42 @@ python tools\compare_with_maya\compare.py --profile body --out-dir D:\tmp\cmp
 
 ## 覆盖范围与已知限制
 
-1. **眼球朝向（8 个表情）可以正常驱动，两侧一致。**
-   FaceBoard 上的 `CTRL_L_eye` / `CTRL_R_eye` 的 **translate**（tx = 左右、ty = 上下，量程 -1..1）
-   就是眼球朝向的输入：Maya 里经 `animCurveUA` + `unitConversion` 之后混进 `LOC_L/R_eyeDriver`，
-   再转成 `CTRL_expressions.eyeLook*`；MoBu 侧直接读这两个控制器的 Lcl Translation。
-   实测 `CTRL_L_eye` 的 tx=+1 / ty=+1 两侧 `FACIAL_L_Eye` 旋转逐位相同（42.217° / -29.519°）。
+### 两侧 RigLogic 实际吃哪些输入
+
+| DNA | 输入 | 数量 |
+| --- | --- | --- |
+| `body.dna` | 44 根骨骼 × 3 轴局部旋转（`calf/clavicle/foot/hand/lowerarm/thigh/upperarm` + 五指 `01-03`，左右各一套） | 132 |
+| `head.dna` | 252 个表情控制（`CTRL_expressions.*`）+ `neck_01` / `neck_02` / `head` × 3 轴局部旋转 | 252 + 9 |
+
+所以：**spine / pelvis 不是任何一侧的输入**（驱动它们不会有修形响应）；
+手指 `_04` 段、metacarpal 也不是输入；颈部的两节（`neck_01`/`neck_02`）和 `head` 属于**头部**输入，
+已在 `head` profile 里覆盖。
+
+### 各 profile 的覆盖
+
+| 输入面 | 覆盖情况 |
+| --- | --- |
+| body 44 根驱动骨骼 | `body_sweep` 逐根逐轴 ±45° 全覆盖 |
+| head 的 252 个表情 | `face_sweep` 逐个控制器覆盖（178 个控制轴，`CTRL_C_eye` 除外） |
+| head 的 `neck_01`/`neck_02`/`head` | `head` profile 单轴 + 组合共 16 个姿势 |
+| 输出侧 | 840 根 `FACIAL_*`、258 根身体修形关节、858 个 BlendShape、5 个 DNA 网格 |
+| `neck_01`/`neck_02`/`head` → 面部 | `head` profile：位置 1.1e-04 mm、旋转 5.0e-06°、BlendShape 3.0e-05（两侧一致） |
+
+### 尚未覆盖
+
+1. **LOD > 0**：所有 profile 都用场景当前 LOD（本次为 0）。换 LOD 会改变驱动集/通道映射，建议单独跑一轮。
+2. **HIK 激活状态**：本次 MotionBuilder 侧的 Character 是 **inactive**。插件关于“HIK 激活时驱动输入改由全局旋转反推局部”的修复
+   在 `head`/`body_sweep` 里间接验证了同样的机制（全局→局部），但真 HIK 驱动下的姿态未覆盖。
+3. **`CTRL_C_eye`（双眼同步朝向）**：Maya 面板便利控制器，DNA GUI 未声明，MoBu 无法驱动；已列入 `skip`。
+4. **非 `CTRL_*` 的绑定层行为**（IK、拉伸、FacialRoot 跟随头部的权重等）不在对比范围内——只比 RigLogic 修形。
+
+### 面板与求值层面的已知差异
+
+1. **眼球朝向可以正常驱动，两侧一致。**
+   FaceBoard 上 `CTRL_L_eye` / `CTRL_R_eye` 的 **translate**（tx = 左右、ty = 上下，量程 -1..1）
+   就是眼球朝向的输入：Maya 经 `animCurveUA` + `unitConversion` 混进 `LOC_L/R_eyeDriver`，
+   再转成 `CTRL_expressions.eyeLook*`；MoBu 直接读这两个控制器的 Lcl Translation。
+   实测 tx=+1 / ty=+1 时两侧 `FACIAL_L_Eye` 旋转逐位相同（42.217° / −29.519°）。
 2. **唯一的面板覆盖差异：`CTRL_C_eye`（双眼同步朝向）。**
    它是 Maya 侧的面板便利控制器（驱动 `LOC_C_eyeDriver` → 两只眼），DNA GUI 没有声明它，
    所以 MoBu 的 FaceBoard 模式无法驱动；已列入 `poses_face_sweep.json` 的 `skip`。
@@ -160,9 +213,8 @@ python tools\compare_with_maya\compare.py --profile body --out-dir D:\tmp\cmp
 3. **部分控制器在本 DNA 上无可见输出**（`nose_wrinkleUpper` 静置已饱和在 1、`mouth_lipsTogether*`、
    `mouth_stretchLipsClose`、`neck_swallow`、`teeth*`、`jaw_openExtreme` 等），两侧表现一致，
    不是绑定问题；`face_sweep` 的报告会逐条列出。
-4. **只驱动 `CTRL_*` 的 translate**（FaceBoard 的表情基本都是平移驱动）。
-5. **DNA 网格的 transform 不动**属正常：面部的顶点变形来自骨骼 + BlendShape，报告里的网格位姿列恒为 0。
-6. **一个场景里多个不同 DNA 的角色**时，`body` 的关节名/`face` 的通道名会混在一起；
+4. **DNA 网格的 transform 不动**属正常：面部的顶点变形来自骨骼 + BlendShape，报告里的网格位姿列恒为 0。
+5. **一个场景里多个不同 DNA 的角色**时，`body` 的关节名/`face` 的通道名会混在一起；
    建议一次只对比一个角色，或使用不同 namespace 后只打开一个角色的可见性。
 
 ## 实现注意

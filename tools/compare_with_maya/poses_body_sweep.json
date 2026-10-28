@@ -1,0 +1,6 @@
+{
+  "_comment": "身体全驱动骨骼扫描：对 body.dna 的每一根 raw control 骨骼，逐轴摆 ±value（度），确保 44 根驱动骨骼全部覆盖（含手指 01-03、foot、clavicle、hand 的左右两侧）。",
+  "mode": "sweep",
+  "value": 45.0,
+  "skip": []
+}

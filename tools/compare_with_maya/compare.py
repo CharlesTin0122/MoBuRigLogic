@@ -31,9 +31,13 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_THRESHOLDS = {
     # profile: (位置 mm, 旋转 deg, BlendShape 0..100 制)
     "body": (0.8, 0.6, None),
+    "body_sweep": (1.5, 3.5, None),
     "face": (0.01, 0.01, 0.01),
     "face_sweep": (0.01, 0.01, 0.01),
+    "head": (0.01, 0.01, 0.01),
 }
+
+FACE_PROFILES = ("face", "face_sweep", "head")
 
 GROUPS = [
     ("legs", "腿部(髋/膝/踝)", ("thigh", "calf", "ankle")),
@@ -105,9 +109,11 @@ def compare_body(maya, mobu, thresholds):
     labels = [l for l in mp if l in op]
     if not labels:
         raise RuntimeError("两侧没有共同的姿势标签")
-    rest_m, rest_o = mp["P00_rest"]["mats"], op["P00_rest"]["mats"]
-    am_rest, ao_rest = mp["P00_rest"]["attrs"], op["P00_rest"]["attrs"]
+    rest_m, rest_o = mp[labels[0]]["mats"], op[labels[0]]["mats"]
+    am_rest, ao_rest = mp[labels[0]]["attrs"], op[labels[0]]["attrs"]
     pos_mm, rot_deg, _bs = thresholds
+    # 姿势很多时（sweep）只列摘要，避免报告膨胀
+    brief = len(labels) > 60
 
     driver_pos = 0.0
     for label in labels:
@@ -190,10 +196,21 @@ def compare_body(maya, mobu, thresholds):
     A("")
     A("| 姿势 | Δ平移 | Δ旋转 | Δ缩放 |")
     A("|---|---|---|---|")
+    worst_pose_rows = []
     for label in labels:
         row = per_pose[label]
+        if brief:
+            worst_pose_rows.append((row["rotation"], label))
+            continue
         A("| %s | %s | %s° | %s |"
           % (label, sci(row["translation"]), sci(row["rotation"]), sci(row["scale"])))
+    if brief:
+        for _score, label in sorted(worst_pose_rows, reverse=True)[:15]:
+            row = per_pose[label]
+            A("| %s | %s | %s° | %s |"
+              % (label, sci(row["translation"]), sci(row["rotation"]), sci(row["scale"])))
+        A("")
+        A("> 共 %d 个姿势，上表只列旋转差最大的 15 个。" % len(labels))
     static_bad = sorted(((v, j) for j, v in static_rot.items() if v > rot_deg), reverse=True)
     A("")
     A("静置姿态旋转差超过阈值的关节：%d 根" % len(static_bad))
@@ -209,9 +226,13 @@ def compare_body(maya, mobu, thresholds):
     A("")
     A("| 姿势 | 动态偏差 | 绝对偏差 |")
     A("|---|---|---|")
-    for label in labels:
+    pos_rows = [(pose_pos[l]["dynamic"], l) for l in labels]
+    for _score, label in (sorted(pos_rows, reverse=True)[:15] if brief else pos_rows):
         row = pose_pos[label]
         A("| %s | %.3f mm (%s) | %.3f mm |" % (label, row["dynamic"] * 10, row["joint"], row["absolute"] * 10))
+    if brief:
+        A("")
+        A("> 共 %d 个姿势，上表只列动态偏差最大的 15 个。" % len(labels))
     A("")
     A("## 4. 按部位汇总")
     A("")
@@ -430,11 +451,11 @@ def main(argv=None):
             raise SystemExit("缺少采样文件：%s" % path)
 
     maya, mobu = load_side(maya_path), load_side(mobu_path)
-    if args.profile == "body":
-        report, summary = compare_body(maya, mobu, (pos_mm, rot_deg, bs_eps))
-    else:
+    if args.profile in FACE_PROFILES:
         report, summary = compare_face(maya, mobu, (pos_mm, rot_deg, bs_eps),
                                        sweep=(args.profile == "face_sweep"))
+    else:
+        report, summary = compare_body(maya, mobu, (pos_mm, rot_deg, bs_eps))
 
     report_path = os.path.join(args.out_dir, "report_%s.md" % args.profile)
     with io.open(report_path, "w", encoding="utf-8") as f:
@@ -445,12 +466,12 @@ def main(argv=None):
         json.dump(summary, f, ensure_ascii=False, indent=2)
 
     print("报告：%s" % report_path)
-    if args.profile == "body":
-        print("驱动姿态一致：%.5f mm | 修形动态位置最大偏差：%.3f mm | 旋转输出最大偏差：%.3f°"
-              % (summary["driverPosMm"], summary["maxDynamicPosMm"], summary["maxRotDeg"]))
-    else:
+    if args.profile in FACE_PROFILES:
         print("关节位置最大差 %s mm | 旋转最大差 %s° | BlendShape 最大差 %s"
               % (sci(summary["maxPosMm"]), sci(summary["maxRotDeg"]), sci(summary["maxBs"])))
+    else:
+        print("驱动姿态一致：%.5f mm | 修形动态位置最大偏差：%.3f mm | 旋转输出最大偏差：%.3f°"
+              % (summary["driverPosMm"], summary["maxDynamicPosMm"], summary["maxRotDeg"]))
     print("判定：%s" % ("PASS" if summary["pass"] else "FAIL"))
     if not summary["pass"] and not args.no_fail:
         return 1

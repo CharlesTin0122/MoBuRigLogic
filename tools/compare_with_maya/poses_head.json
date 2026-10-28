@@ -1,0 +1,22 @@
+{
+  "_comment": "颈部/头部驱动姿势表：head.dna 除表情外还读取 neck_01 / neck_02 / head 的局部旋转（9 个轴），这里逐个驱动并组合。delta 为叠加在静置姿态上的局部欧拉增量（度）。",
+  "mode": "static",
+  "poses": [
+    { "label": "H00_rest", "delta": {} },
+    { "label": "H01_neck01_X+30", "delta": { "neck_01": [30, 0, 0] } },
+    { "label": "H02_neck01_X-30", "delta": { "neck_01": [-30, 0, 0] } },
+    { "label": "H03_neck01_Y+30", "delta": { "neck_01": [0, 30, 0] } },
+    { "label": "H04_neck01_Z+30", "delta": { "neck_01": [0, 0, 30] } },
+    { "label": "H05_neck02_X+30", "delta": { "neck_02": [30, 0, 0] } },
+    { "label": "H06_neck02_Y+30", "delta": { "neck_02": [0, 30, 0] } },
+    { "label": "H07_neck02_Z+30", "delta": { "neck_02": [0, 0, 30] } },
+    { "label": "H08_head_X+30", "delta": { "head": [30, 0, 0] } },
+    { "label": "H09_head_X-30", "delta": { "head": [-30, 0, 0] } },
+    { "label": "H10_head_Y+45", "delta": { "head": [0, 45, 0] } },
+    { "label": "H11_head_Z+30", "delta": { "head": [0, 0, 30] } },
+    { "label": "H12_neck01+neck02_Z+20", "delta": { "neck_01": [0, 0, 20], "neck_02": [0, 0, 20] } },
+    { "label": "H13_neck01_head_X+25", "delta": { "neck_01": [25, 0, 0], "head": [25, 0, 0] } },
+    { "label": "H14_neck_head_mix", "delta": { "neck_01": [15, 20, 0], "neck_02": [10, 0, 15], "head": [20, 25, 10] } },
+    { "label": "H15_neck01_head_X+25_with_jaw", "delta": { "neck_01": [25, 0, 0], "head": [25, 0, 0] } }
+  ]
+}

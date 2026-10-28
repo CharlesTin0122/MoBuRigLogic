@@ -25,21 +25,38 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 PROFILES = {
     "body": {
         "kind": "body",
+        "input": "joint",
         "mayaNode": "body_rl4Embedded",
         "mobuConstraint": "RigLogic Body Corrective",
         "poses": "poses.json",
     },
+    "body_sweep": {
+        "kind": "body",
+        "input": "joint",
+        "mayaNode": "body_rl4Embedded",
+        "mobuConstraint": "RigLogic Body Corrective",
+        "poses": "poses_body_sweep.json",
+    },
     "face": {
         "kind": "face",
+        "input": "control",
         "mayaNode": "head_rl4Embedded",
         "mobuConstraint": "RigLogic Head Expression",
         "poses": "poses_face.json",
     },
     "face_sweep": {
         "kind": "face",
+        "input": "control",
         "mayaNode": "head_rl4Embedded",
         "mobuConstraint": "RigLogic Head Expression",
         "poses": "poses_face_sweep.json",
+    },
+    "head": {
+        "kind": "face",
+        "input": "joint",
+        "mayaNode": "head_rl4Embedded",
+        "mobuConstraint": "RigLogic Head Expression",
+        "poses": "poses_head.json",
     },
 }
 
@@ -195,6 +212,20 @@ def run_maya(profile_name, poses_path, out_path, names_path):
         drivers, outputs = maya_body_rig(cmds, node)
         if not drivers or not outputs:
             raise RuntimeError("修形节点 %s 没有连接驱动/输出关节" % node)
+        if mode == "sweep":
+            # 身体全驱动扫描：每根 raw control 骨骼逐轴摆 ±value
+            skip = set(extra["skip"] or [])
+            value = extra["value"]
+            poses = [("B000_rest", {})]
+            for n, joint in enumerate(drivers):
+                if joint in skip:
+                    continue
+                for axis in range(3):
+                    for sign in (1.0, -1.0):
+                        v = [0.0, 0.0, 0.0]
+                        v[axis] = value * sign
+                        poses.append(("B%03d_%s_%s%+d" % (n + 1, joint, "XYZ"[axis], int(value * sign)),
+                                      {joint: tuple(v)}))
         rest = {}
         for j in drivers:
             rest[j] = list(cmds.getAttr(j + ".rotate")[0])
@@ -204,9 +235,12 @@ def run_maya(profile_name, poses_path, out_path, names_path):
             parents[name] = p[0] if p else None
 
         def apply_body(delta):
-            for j in drivers:
+            for j in drivers:   # 先归零，避免上一个姿势残留
+                cmds.setAttr(j + ".rotate", *rest[j])
+            for j, d in delta.items():
+                if j not in rest:
+                    continue
                 base = rest[j]
-                d = delta.get(j, (0.0, 0.0, 0.0))
                 cmds.setAttr(j + ".rotate", base[0] + d[0], base[1] + d[1], base[2] + d[2])
 
         for label, delta in poses:
@@ -226,9 +260,11 @@ def run_maya(profile_name, poses_path, out_path, names_path):
         joints, channels, meshes = maya_face_rig(cmds, node)
         if not joints or not channels:
             raise RuntimeError("Maya 侧没有找到面部修形关节/BlendShape")
+        joint_input = profile.get("input") == "joint"
 
-        controls = maya_face_controls(cmds) if mode == "sweep" else []
-        if mode == "sweep":
+        controls = []
+        if mode == "sweep" and not joint_input:
+            controls = maya_face_controls(cmds)
             skip = set(extra["skip"] or [])
             value = extra["value"]
             poses = [("F000_rest", {})]
@@ -243,49 +279,63 @@ def run_maya(profile_name, poses_path, out_path, names_path):
         rest = {}
         locks = {}
         driven = {}
-        for ctrl in used:
-            if not cmds.objExists(ctrl):
-                rest[ctrl] = None
+        for name in used:
+            if not cmds.objExists(name):
+                rest[name] = None
                 continue
-            rest[ctrl] = list(cmds.getAttr(ctrl + ".translate")[0])
+            if joint_input:
+                rest[name] = list(cmds.getAttr(name + ".rotate")[0])
+                continue
+            rest[name] = list(cmds.getAttr(name + ".translate")[0])
             for axis in ("X", "Y", "Z"):
-                attr = "%s.translate%s" % (ctrl, axis)
-                locks[(ctrl, axis)] = bool(cmds.getAttr(attr, lock=True))
-                driven[(ctrl, axis)] = bool(cmds.listConnections(attr, s=True, d=False))
-                if locks[(ctrl, axis)] and not driven[(ctrl, axis)]:
+                attr = "%s.translate%s" % (name, axis)
+                locks[(name, axis)] = bool(cmds.getAttr(attr, lock=True))
+                driven[(name, axis)] = bool(cmds.listConnections(attr, s=True, d=False))
+                if locks[(name, axis)] and not driven[(name, axis)]:
                     cmds.setAttr(attr, lock=False)
 
-        def reset_controls():
-            for ctrl, value in rest.items():
+        def reset_inputs():
+            for name, value in rest.items():
                 if value is None:
                     continue
+                if joint_input:
+                    cmds.setAttr(name + ".rotate", value[0], value[1], value[2])
+                    continue
                 for i, axis in enumerate("XYZ"):
-                    if driven.get((ctrl, axis)):
+                    if driven.get((name, axis)):
                         continue
-                    cmds.setAttr("%s.translate%s" % (ctrl, axis), value[i])
+                    cmds.setAttr("%s.translate%s" % (name, axis), value[i])
+
+        def apply_inputs(delta):
+            for name, value in delta.items():
+                base = rest.get(name)
+                if base is None:
+                    continue
+                if joint_input:
+                    cmds.setAttr(name + ".rotate",
+                                 base[0] + value[0], base[1] + value[1], base[2] + value[2])
+                    continue
+                for i, axis in enumerate("XYZ"):
+                    if driven.get((name, axis)):
+                        continue
+                    cmds.setAttr("%s.translate%s" % (name, axis), value[i])
 
         try:
             for label, delta in poses:
-                reset_controls()
-                for ctrl, value in delta.items():
-                    if rest.get(ctrl) is None:
-                        continue
-                    for i, axis in enumerate("XYZ"):
-                        if driven.get((ctrl, axis)):
-                            continue
-                        cmds.setAttr("%s.translate%s" % (ctrl, axis), value[i])
+                reset_inputs()
+                apply_inputs(delta)
                 cmds.refresh(force=True)
                 snap = _maya_snapshot_face(cmds, joints, channels, meshes)
                 snap.update({"label": label, "delta": delta})
                 result["poses"].append(snap)
                 _log("  [maya] %s" % label)
         finally:
-            reset_controls()
+            reset_inputs()
             cmds.refresh(force=True)
-            for (ctrl, axis), was_locked in locks.items():
-                if driven.get((ctrl, axis)):
+            for (name, axis), was_locked in locks.items():
+                if driven.get((name, axis)):
                     continue
-                cmds.setAttr("%s.translate%s" % (ctrl, axis), lock=was_locked)
+                cmds.setAttr("%s.translate%s" % (name, axis), lock=was_locked)
 
         result.update({"joints": joints,
                        "channels": [[m, c] for m, c, _n, _i in channels],
@@ -340,6 +390,19 @@ def run_mobu(profile_name, poses_path, out_path, names_path):
         drivers = names["drivers"]
         outputs = [n for n in names["outputs"] if n in models]
         missing = [n for n in drivers if n not in models]
+        if mode == "sweep":
+            skip = set(extra["skip"] or [])
+            value = extra["value"]
+            poses = [("B000_rest", {})]
+            for n, joint in enumerate(drivers):
+                if joint in skip:
+                    continue
+                for axis in range(3):
+                    for sign in (1.0, -1.0):
+                        v = [0.0, 0.0, 0.0]
+                        v[axis] = value * sign
+                        poses.append(("B%03d_%s_%s%+d" % (n + 1, joint, "XYZ"[axis], int(value * sign)),
+                                      {joint: tuple(v)}))
         rest = {}
         for j in drivers:
             if j in models:
@@ -350,12 +413,17 @@ def run_mobu(profile_name, poses_path, out_path, names_path):
             parents[name] = parent.Name if parent else None
 
         def apply_body(delta):
-            for j in drivers:
+            for j in drivers:   # 先归零，避免上一个姿势残留
                 model = models.get(j)
                 if model is None:
                     continue
                 base = rest[j]
-                d = delta.get(j, (0.0, 0.0, 0.0))
+                model.PropertyList.Find("Lcl Rotation").Data = fb.FBVector3d(base[0], base[1], base[2])
+            for j, d in delta.items():
+                model = models.get(j)
+                if model is None or j not in rest:
+                    continue
+                base = rest[j]
                 model.PropertyList.Find("Lcl Rotation").Data = fb.FBVector3d(
                     base[0] + d[0], base[1] + d[1], base[2] + d[2])
             fb.FBSystem().Scene.Evaluate()
@@ -395,9 +463,10 @@ def run_mobu(profile_name, poses_path, out_path, names_path):
             if prop is not None:
                 bs_bindings.append([mesh, channel, prop])
         meshes = [m for m in names.get("meshes", []) if m in models]
+        joint_input = profile.get("input") == "joint"
 
-        controls = names.get("controls", []) if mode == "sweep" else []
-        if mode == "sweep":
+        controls = names.get("controls", []) if (mode == "sweep" and not joint_input) else []
+        if mode == "sweep" and not joint_input:
             skip = set(extra["skip"] or [])
             value = extra["value"]
             poses = [("F000_rest", {})]
@@ -410,16 +479,17 @@ def run_mobu(profile_name, poses_path, out_path, names_path):
 
         used = sorted(set(k for _l, d in poses for k in d))
         rest = {}
-        for ctrl in used:
-            model = models.get(ctrl)
-            rest[ctrl] = list(model.PropertyList.Find("Lcl Translation").Data) if model else None
+        prop_name = "Lcl Rotation" if joint_input else "Lcl Translation"
+        for name in used:
+            model = models.get(name)
+            rest[name] = list(model.PropertyList.Find(prop_name).Data) if model else None
 
-        def reset_controls():
-            for ctrl, value in rest.items():
-                model = models.get(ctrl)
+        def reset_inputs():
+            for name, value in rest.items():
+                model = models.get(name)
                 if model is None or value is None:
                     continue
-                model.PropertyList.Find("Lcl Translation").Data = fb.FBVector3d(value[0], value[1], value[2])
+                model.PropertyList.Find(prop_name).Data = fb.FBVector3d(value[0], value[1], value[2])
             fb.FBSystem().Scene.Evaluate()
 
         matrix = fb.FBMatrix()
@@ -431,12 +501,17 @@ def run_mobu(profile_name, poses_path, out_path, names_path):
                               m.PropertyList.Find("Lcl Scaling"))
 
         for label, delta in poses:
-            reset_controls()
-            for ctrl, value in delta.items():
-                model = models.get(ctrl)
-                if model is None:
+            reset_inputs()
+            for name, value in delta.items():
+                model = models.get(name)
+                base = rest.get(name)
+                if model is None or base is None:
                     continue
-                model.PropertyList.Find("Lcl Translation").Data = fb.FBVector3d(value[0], value[1], value[2])
+                if joint_input:
+                    model.PropertyList.Find(prop_name).Data = fb.FBVector3d(
+                        base[0] + value[0], base[1] + value[1], base[2] + value[2])
+                else:
+                    model.PropertyList.Find(prop_name).Data = fb.FBVector3d(value[0], value[1], value[2])
             fb.FBSystem().Scene.Evaluate()
 
             T = {}
@@ -463,7 +538,7 @@ def run_mobu(profile_name, poses_path, out_path, names_path):
             result["poses"].append({"label": label, "delta": delta,
                                     "T": T, "R": R, "S": S, "p": pos, "bs": bs, "meshP": mesh_pos})
             _log("  [mobu] %s" % label)
-        reset_controls()
+        reset_inputs()
 
         result.update({"joints": joints,
                        "channels": [[m, c] for m, c, _p in bs_bindings],

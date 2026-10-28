@@ -6,10 +6,10 @@
 
 | 文件 | 目标 MotionBuilder | 源码分支 | 源码提交 | 构建目录 |
 | --- | --- | --- | --- | --- |
-| `moburiglogic_2019.dll` | 2019 | `mobu2019` | `55fc484` | `build2019/` |
-| `moburiglogic_2024.dll` | 2024 | `main` | `4c874e1` | `build/` |
+| `moburiglogic_2019.dll` | 2019 | `mobu2019` | `d9fbf16` | `build2019/` |
+| `moburiglogic_2024.dll` | 2024 | `main` | `338c97d` | `build/` |
 
-两个提交为同一功能节点（`feat: FaceBoard 眼睛摇杆联动（CTRL_C_eye 叠加到左右眼）`）在两条分支上的平行提交。
+两个提交为同一功能节点（`fix: 并发加固（播放中不重建、绑定表入锁、失效即退场）`）在两条分支上的平行提交。
 
 编译日期：2026-10-28　配置：Release / x64 / MSVC 2022 / `/MD` / C++17
 

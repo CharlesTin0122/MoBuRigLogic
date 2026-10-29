@@ -72,6 +72,16 @@ public:
         key += notice.relocated ? notice.newPath : Join( notice.tried );
         if (!sSeen.insert( key ).second) return;                  // 已提示过
 
+        // 同一节点只保留最终结论：加载早期（场景路径还没就绪）会先推一条“未找到”，
+        // 随后回退成功又推一条“已改写”——两条同时出现会让提示自相矛盾。
+        // 规则：已改写优先；新的“未找到”在已有改写结果时直接丢弃
+        for (auto it = sQueue.begin(); it != sQueue.end(); )
+        {
+            if (it->node != notice.node) { ++it; continue; }
+            if (!notice.relocated && it->relocated) return;       // 已有改写结果，忽略失败
+            it = sQueue.erase( it );
+        }
+
         sQueue.push_back( notice );
         sIdle = 0;
     }

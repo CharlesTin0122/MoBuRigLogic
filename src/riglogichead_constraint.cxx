@@ -273,8 +273,10 @@ bool RigLogicHeadConstraint::LoadDna()
         mLoadedDnaPath.clear();
         mLoadedDnaPropertyPath.clear();
         mDnaSource = moburiglogic::DnaSource::Property;
-        // 通知（弹窗）委托给空闲队列：解析回调里不能弹模态框
-        if (ReferenceGet( mGroupSkeleton, 0 ))
+        // 通知（弹窗）委托给空闲队列：解析回调里不能弹模态框。
+        // 只在整个候选集都试过（即场景同目录也试过）时才报“未找到”，
+        // 否则加载早期场景路径尚未就绪会造成假告警
+        if (ReferenceGet( mGroupSkeleton, 0 ) && candidates.size() > 1u)
         {
             moburiglogic::DnaNotice notice;
             notice.relocated = false;

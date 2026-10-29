@@ -9,6 +9,7 @@
 
 #include "riglogichead_constraint.h"
 #include "riglogic_common.h"
+#include "riglogic_notice.h"
 #include "riglogic_scene.h"
 
 #include <fbsdk/fbundomanager.h>
@@ -56,7 +57,6 @@ static const char* kCentreEyeStick = "CTRL_C_eye";
 bool RigLogicHeadConstraint::FBCreate()
 {
     FBPropertyPublish( this, DnaPath,     "DNA Path",      nullptr, nullptr );
-    FBPropertyPublish( this, SourceDnaPath, "Source DNA Path", nullptr, nullptr );
     FBPropertyPublish( this, LodLevel,    "LOD Level",     nullptr, nullptr );
     FBPropertyPublish( this, InputMode,   "Input Mode",    nullptr, nullptr );
     FBPropertyPublish( this, LastSolveMs, "Last Solve Ms", nullptr, nullptr );
@@ -127,6 +127,10 @@ void RigLogicHeadConstraint::EventUIIdle( HISender, HKEvent )
             if (LoadDna()) RebuildBindings();
         }
     }
+
+    // DNA 解析通知（自动改写 / 未找到）：由主线程空闲统一弹一条汇总消息，
+    // 不在加载与重建回调里弹模态框
+    moburiglogic::DnaNoticeQueue::DrainIfReady( moburiglogic::IsTransportPlaying() );
 }
 
 void RigLogicHeadConstraint::SetPanelFramesLocked( bool locked )
@@ -221,16 +225,13 @@ bool RigLogicHeadConstraint::LoadDna()
 {
     const char* prop = DnaPath.AsString();
     const std::string propertyPath = prop ? prop : "";
-    const char* prev = SourceDnaPath.AsString();
-    const std::string previousPath = prev ? prev : "";
 
-    // 候选顺序：DNA Path 属性 → 上次被替换的路径 → 绑定 FBX 同目录的 head.dna。
-    // 回退命中后会把实际路径写回 DnaPath，公司原路径留在 SourceDnaPath
-    // （随 FBX 保存），拿回公司时第二级自动把它恢复回来。
+    // 候选顺序：DNA Path 属性 → 绑定 FBX 同目录的 head.dna。
+    // 回退命中后把实际路径写回 DnaPath，之后这个约束就一直带着可用路径。
     // 注意：不能用“文件是否存在”预判，统一交给 LoadRigRuntime，
     // 路径编码、相对路径等行为与原来的 DnaPath 完全一致
     const auto candidates = moburiglogic::DnaCandidates(
-        propertyPath, previousPath, moburiglogic::SceneFilePath(), kSceneFolderDnaName );
+        propertyPath, moburiglogic::SceneFilePath(), kSceneFolderDnaName );
 
     moburiglogic::RigRuntime fresh;
     std::string resolvedPath;
@@ -243,12 +244,9 @@ bool RigLogicHeadConstraint::LoadDna()
         }
     }
     const bool loaded = !resolvedPath.empty();
-    const auto source =
-        !loaded                ? moburiglogic::DnaSource::Property
-        : resolvedPath == propertyPath ? moburiglogic::DnaSource::Property
-        : (!previousPath.empty() && resolvedPath == previousPath)
-                                     ? moburiglogic::DnaSource::Previous
-                                     : moburiglogic::DnaSource::SceneFolder;
+    const bool relocated = loaded && resolvedPath != propertyPath;
+    const auto source = relocated ? moburiglogic::DnaSource::SceneFolder
+                                  : moburiglogic::DnaSource::Property;
 
     // 耗时的读取/构建在锁外完成，锁内只交换指针：求值线程看不到半成品，
     // 也不会在旧运行时被销毁时还在用它
@@ -269,6 +267,17 @@ bool RigLogicHeadConstraint::LoadDna()
         mLoadedDnaPath.clear();
         mLoadedDnaPropertyPath.clear();
         mDnaSource = moburiglogic::DnaSource::Property;
+        // 通知（弹窗）委托给空闲队列：解析回调里不能弹模态框
+        if (ReferenceGet( mGroupSkeleton, 0 ))
+        {
+            moburiglogic::DnaNotice notice;
+            notice.relocated = false;
+            notice.node   = std::string( Name.AsString() );
+            notice.ns     = CharacterNamespace();
+            notice.oldPath = propertyPath;
+            notice.tried  = candidates;
+            moburiglogic::DnaNoticeQueue::Push( notice );
+        }
         return false;
     }
 
@@ -282,18 +291,29 @@ bool RigLogicHeadConstraint::LoadDna()
     mDnaSource = source;
 
     // 属性写入放到最后：它可能触发 MoBu 通知/重建绑定，此时内部状态已一致，不会递归重载
-    if (source != moburiglogic::DnaSource::Property)
+    if (relocated)
     {
-        if (!propertyPath.empty() && propertyPath != resolvedPath)
-            SourceDnaPath = propertyPath.c_str();   // 记住“刚从哪条路退回来”
         DnaPath = resolvedPath.c_str();             // DNA Path 始终显示实际使用的文件
-        FBTrace( "[RigLogicHead] DNA Path unavailable ('%s'), using %s: %s\n",
-                 propertyPath.c_str(),
-                 source == moburiglogic::DnaSource::Previous
-                     ? "Source DNA Path" : "scene folder DNA",
-                 resolvedPath.c_str() );
+        FBTrace( "[RigLogicHead] DNA Path unavailable ('%s'), using scene folder DNA: %s\n",
+                 propertyPath.c_str(), resolvedPath.c_str() );
+
+        // 提示用户“已自动改写，请保存”：同样交给空闲队列，不在这里弹窗
+        moburiglogic::DnaNotice notice;
+        notice.relocated = true;
+        notice.node    = std::string( Name.AsString() );
+        notice.ns      = CharacterNamespace();
+        notice.oldPath = propertyPath;
+        notice.newPath = resolvedPath;
+        moburiglogic::DnaNoticeQueue::Push( notice );
     }
     return true;
+}
+
+std::string RigLogicHeadConstraint::CharacterNamespace() const
+{
+    FBModel* root = static_cast<FBModel*>(
+        const_cast<RigLogicHeadConstraint*>( this )->ReferenceGet( mGroupSkeleton, 0 ) );
+    return root ? moburiglogic::ExtractNamespace( root ) : std::string();
 }
 
 void RigLogicHeadConstraint::ReleaseDna()
@@ -843,6 +863,8 @@ bool RigLogicHeadConstraint::FbxRetrieve( FBFbxObject* pFbxObject, kFbxObjectSto
 {
     if (pStoreWhat == kCleanup)
     {
+        // 打开新文件：清空通知去重表（待发队列不动，加载与文件事件的先后顺序不可靠）
+        moburiglogic::DnaNoticeQueue::OnSceneLoaded();
         // 场景加载完成后重建运行时；若 SetupAllAnimationNodes 已按同一属性路径加载过则跳过，
         // 避免重复读取 DNA 并在求值可能已开始时替换运行时。
         // 属性路径打不开时会回退到 FBX 同目录的 head.dna（棚内/外拍场景）

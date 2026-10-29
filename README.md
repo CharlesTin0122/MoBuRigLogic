@@ -38,7 +38,7 @@ C++ 类型：`RigLogicHeadConstraint`
 - 根据 DNA 的 mesh-channel mapping 输出 BlendShape 权重。
 - 将 RigLogic 的 `0–1` BlendShape 输出转换为 MotionBuilder 的 `0–100` 属性值。
 - 提供 DNA 路径、LOD、输入模式、上次求解耗时、重建绑定和表情归零操作。
-- DNA 路径无法加载时，自动回退到 `Source DNA Path` 或绑定 FBX 同目录的固定文件名 `head.dna`（见[DNA 路径回退](#dna-路径回退棚内移动作业)）。
+- DNA 路径无法加载时，自动回退到绑定 FBX 同目录的固定文件名 `head.dna` 并写回属性（见[DNA 路径回退](#dna-路径回退棚内移动作业)）。
 
 头部约束当前不创建关节缩放输出。
 
@@ -51,7 +51,7 @@ C++ 类型：`RigLogicBodyConstraint`
 - 在 MotionBuilder 求值图中运行身体修形求解。
 - 输出身体修形关节的局部平移、旋转和缩放。
 - 提供 DNA 路径、LOD、上次求解耗时和重建绑定操作。
-- DNA 路径无法加载时，自动回退到 `Source DNA Path` 或绑定 FBX 同目录的固定文件名 `body.dna`（见[DNA 路径回退](#dna-路径回退棚内移动作业)）。
+- DNA 路径无法加载时，自动回退到绑定 FBX 同目录的固定文件名 `body.dna` 并写回属性（见[DNA 路径回退](#dna-路径回退棚内移动作业)）。
 
 身体约束当前驱动修形关节，不输出 BlendShape。
 
@@ -284,37 +284,38 @@ ctest --test-dir build -C Release --output-on-failure
 
 ### DNA 路径回退（棚内/移动作业）
 
-公司室内通常把 DNA 放在固定的共享盘路径，但动画师带绑定去动捕棚、外拍或异地工位时，往往无法创建完全相同的目录结构。为此插件内置了按文件名兜底的能力，并按三级顺序解析：
+公司室内通常把 DNA 放在固定的共享盘路径，但动画师带绑定去动捕棚、外拍或异地工位时，往往无法创建完全相同的目录结构。为此插件按两级解析：
 
 | 尝试顺序 | 路径 | 说明 |
 | --- | --- | --- |
-| 1 | `DNA Path` 属性 | 当前实际使用的路径（见下方写回规则） |
-| 2 | `Source DNA Path` 属性 | 上次回退时被替换掉的路径，通常是公司共享盘；拿回公司后靠它自动恢复 |
-| 3 | `<绑定 FBX 所在目录>/head.dna`（头部）<br>`<绑定 FBX 所在目录>/body.dna`（身体） | 文件名固定，按约束类型各取一份 |
+| 1 | `DNA Path` 属性 | 单一真相：当前实际使用的 DNA 文件 |
+| 2 | `<绑定 FBX 所在目录>/head.dna`（头部）<br>`<绑定 FBX 所在目录>/body.dna`（身体） | 文件名固定，按约束类型各取一份 |
 
-写回规则：
+**写回规则（核心）**：第二级命中后，插件把实际路径**写回 `DNA Path` 属性**并随 FBX 保存。所以一个绑定只要成功解析过一次，它就永久带着可用路径 —— 之后无论是直接打开还是被 **merge 进其他场景**，第 1 级都直接命中，不再依赖回退。
 
-- 只要实际加载的路径不等于 `DNA Path` 属性，插件就把实际路径**写回 `DNA Path`**，并把被替换的原路径存进 `Source DNA Path`（两者都随 FBX 保存）。因此属性上看到的永远是“当前真正在用的那份 DNA”。
-- 第二级（`Source DNA Path`）排在第三级之前：公司机器上如果 FBX 旁边恰好也有 DNA，不会把仍然可用的公司路径挤掉。
-- 三个候选都是“能加载才算命中”：路径存在性不做预判，直接交给 RigLogic 读取，因此相对路径、网络路径等行为与原来的 `DNA Path` 完全一致。如果三级全部打不开，插件不改动任何属性。
+**提示弹窗**：解析结果不会在加载/重建回调里弹框，而是由主线程空闲统一汇总成**一条**消息：
 
-往返行为（公司 ↔ 棚内）：
+- 自动改写成功：`DNA 路径已自动更新（N 个节点）` + 新旧路径 + `[立即保存]` / `[稍后]`；“立即保存”会直接执行一次文件保存；
+- 未找到可用 DNA：`未找到可用的 DNA 文件（N 个节点）` + 已尝试的候选路径 + 提示手动指定；
+- 两个弹窗都带“本次不再提示”；脚本/批量可在启动 MoBu 前设环境变量 `MOBURIGLOGIC_NO_DNA_NOTICES=1` 完全静默。
 
-| 场景 | `DNA Path` | `Source DNA Path` | 命中级别 |
-| --- | --- | --- | --- |
-| 公司打开（公司路径可用） | 公司路径 | 不变 | 1 |
-| 棚内首次打开（只在 FBX 旁放了 DNA） | 公司路径打不开 → 写回棚内路径 | 公司路径 | 3 |
-| 棚内存盘后再次打开 | 棚内路径 | 公司路径 | 1 |
-| 拿回公司打开 | 棚内路径打不开 → 写回公司路径 | 棚内路径 | 2 |
+需要注意的边界：
 
-其他规则：
+- **merge 场景不适用第 2 级**：MoBu 不保留被 merge 文件的源路径（`Scene.FileReferences` / `GetOwnerFileReference` 均为空），所以“同目录回退”只在直接打开绑定文件时生效。正确做法见下文“棚内预烘焙流程”。
+- 场景未存盘（`FBXFileName` 为空）时不会尝试第 2 级，避免拼出裸 `body.dna` 变成相对工作目录的路径。
+- 命中判定不做文件存在性预判，统一交给 RigLogic 读取，相对/网络路径行为与原来的 `DNA Path` 一致；两级都打不开时**不改动任何属性**。
+- 状态区会显示 `DNA: body.dna (from scene folder, DNA Path updated)`；日志中有 `[RigLogicHead]`/`[RigLogicBody]` 的 `using scene folder DNA` 记录。
+- 回退生效后会检查 DNA 关节在场景中的命中情况，缺失时状态区显示 `Warning: N DNA joints not found in scene`（只告警不阻断，通常意味着那份 DNA 不是这个角色的）。
 
-- 场景未存盘（`FBXFileName` 为空）时不会尝试第三级，避免用相对路径误读到无关文件。
-- 状态区会显示实际使用的 DNA 与来源，例如 `DNA: body.dna (from scene folder)` + `Source: //studio/share/dna/body.dna`，或 `DNA: body.dna (restored from Source DNA Path)`；MotionBuilder 日志中另有 `[RigLogicHead]`/`[RigLogicBody]` 的 `using scene folder DNA` / `using Source DNA Path` 记录。
-- 因为回退时插件会写回属性，场景打开后会处于“已修改”状态，关闭时可能提示保存。在棚内/异地本来就要另存一个 working 文件，可直接保存。
-- 回退生效后会检查 DNA 关节在场景中的命中情况。若存在未找到的 DNA 关节，状态区显示 `Warning: N DNA joints not found in scene`，日志同时输出告警——这通常说明目录里那份 DNA 与当前绑定不匹配（例如同目录放了多个角色的 DNA）。插件只告警不阻断，此时应人工确认 DNA 是否正确。
-- 由于文件名固定，**一个目录只能对应一个角色**。需要在一个棚内包中放多个角色时，请分目录存放各自的绑定 FBX 与 DNA。
-- 回退只在场景打开（或 `Rebuild Bindings`）时解析。中途把 DNA 拷到 FBX 旁边后，点一次 `Rebuild Bindings` 即可生效。
+### 棚内预烘焙流程（多角色 merge 的推荐做法）
+
+因为 merge 不保留源路径，给动捕现场准备的正确姿势是：
+
+1. 把每个角色文件夹（FBX + `body.dna` + `head.dna` + 贴图）拷到现场机器；
+2. **在现场机器上**逐个打开绑定 FBX（DNA 与 FBX 同目录）→ 插件自动回退并写回 `DNA Path`，弹窗点“立即保存”；
+3. 之后把这些**已保存**的文件 merge 进动捕场景（可带 namespace）—— 每个约束都带着自己的绝对路径，多角色互不干扰；
+4. 拿回公司后，把 `DNA Path` 手动指回公司路径并保存（不再有自动回公司记忆）。
+
 
 ## 属性说明
 
@@ -367,7 +368,6 @@ MoBu 侧现状与处理：
 | 属性 | 说明 |
 | --- | --- |
 | `DNA Path` / `DnaPath` | 当前**实际使用**的 DNA 文件路径；回退命中时会自动写回实际路径 |
-| `Source DNA Path` / `SourceDnaPath` | 只读：上次回退时被替换掉的路径（通常是公司共享盘），用于回到公司后自动恢复 |
 | `LOD Level` / `LodLevel` | RigLogic 求值和输出绑定使用的 LOD；超出范围时会限制到 DNA 的有效范围 |
 | `Last Solve Ms` / `LastSolveMs` | 上一次完整 RigLogic 求解耗时，单位为毫秒，只读 |
 
@@ -424,7 +424,7 @@ DNA joint name:          head
 
 约束的 DNA 路径、LOD、输入模式和引用关系会通过 MotionBuilder/FBX 对象系统保存。重新打开场景后应检查：
 
-1. DNA 文件路径仍然有效；不可用时会自动回退到 `Source DNA Path` 或绑定 FBX 同目录的 `head.dna`/`body.dna`，并把实际路径写回 `DNA Path`（状态区会标明来源）。
+1. DNA 文件路径仍然有效；不可用时会自动回退到绑定 FBX 同目录的 `head.dna`/`body.dna`，并把实际路径写回 `DNA Path`（会弹窗提示，可直接保存）。
 2. `Skeleton Root` 仍指向正确角色。
 3. 当前角色 namespace 未发生不兼容变化。
 4. 约束处于 `Active` 状态。
@@ -457,7 +457,7 @@ MotionBuilder 加载插件后会占用 DLL。先关闭所有 MotionBuilder 2019 
 - DNA 是否与当前角色资产匹配。
 - OpenRigLogic 是否支持该 DNA 数据版本。
 - MotionBuilder 日志中的 `[RigLogicHead]` 或 `[RigLogicBody]` 信息。
-- 若依赖回退：绑定 FBX 是否已保存到磁盘；`head.dna`/`body.dna` 是否与该 FBX 在同一目录且文件名严格一致；`Source DNA Path` 指向的那份 DNA 是否真的不可用。
+- 若依赖回退：绑定 FBX 是否已保存到磁盘；`head.dna`/`body.dna` 是否与该 FBX 在同一目录且文件名严格一致（merge 场景请改用“棚内预烘焙流程”）。
 
 ### DNA 已加载，但 Bindings NOT ready
 

@@ -132,23 +132,20 @@ public:
             msg += "\n请在约束面板的 DNA Path 中手动指定 DNA 文件，然后 Rebuild Bindings 并保存。";
         }
 
-        bool muteThisSession = false;
+        // 用 FBMessageBox（2019 实测可用，返回 1 基按钮序号）；
+        // 不用带复选框的 WithCheck 变体：实测在某些情况下弹不出来。
+        // 末位按钮固定为“不再提示本次”，其余按位映射。
         const bool canSave = okCount > 0;
-        const int pressed = FBMessageBoxWithCheck(
-            "RigLogic DNA",
-            msg.c_str(),
-            canSave ? "立即保存" : "知道了",
-            canSave ? "稍后" : nullptr,
-            nullptr,
-            "本次不再提示",
-            muteThisSession,
-            0,
-            /*pScrolledMessage=*/1 );
-        if (muteThisSession) sEnabled = false;
+        const int pressed = canSave
+            ? FBMessageBox( "RigLogic DNA", msg.c_str(),
+                            "立即保存", "稍后", "不再提示本次", 0, /*pScrolledMessage=*/1 )
+            : FBMessageBox( "RigLogic DNA", msg.c_str(),
+                            "知道了", "不再提示本次", nullptr, 0, /*pScrolledMessage=*/1 );
 
-        // 按钮索引在不同版本里可能是 0 或 1 基，“稍后”只在第二键（2）时跳过。
-        // 显式传当前文件路径：不传参时 MoBu 在模态循环里会另存为新文件名
-        if (canSave && pressed != 2)
+        const int muteButton = canSave ? 3 : 2;
+        if (pressed == muteButton) { sEnabled = false; return; }
+
+        if (canSave && pressed == 1)
         {
             const char* cur = FBApplication().FBXFileName.AsString();
             FBApplication().FileSave( (cur && *cur) ? cur : nullptr );

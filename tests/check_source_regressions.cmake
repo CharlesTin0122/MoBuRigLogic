@@ -71,8 +71,8 @@ foreach(content_var head_content body_content)
     assert_contains("${${content_var}}" "if (key != mDnaRetryKey)" "scene-folder DNA lazy retry in ${content_var}")
     # 回退命中时属性必须写回实际路径（不再有 Source DNA Path）
     assert_contains("${${content_var}}" "DnaPath = resolvedPath.c_str()" "DNA Path reflects resolved DNA in ${content_var}")
-    assert_not_contains("${${content_var}}" "SourceDnaPath" "removed Source DNA Path in ${content_var}")
-    assert_not_contains("${${content_var}}" "Source DNA Path" "removed Source DNA Path text in ${content_var}")
+    assert_not_contains("${${content_var}}" "SourceDnaPath" "removed Source DNA Path member in ${content_var}")
+    assert_contains("${${content_var}}" [=[PropertyList.Find( "Source DNA Path" )]=] "legacy Source property cleanup in ${content_var}")
     # 通知不能在解析回调里直接弹，必须先登记到空闲队列
     assert_contains("${${content_var}}" "DnaNoticeQueue::Push( notice )" "DNA notice queued in ${content_var}")
     assert_contains("${${content_var}}" "DnaNoticeQueue::DrainIfReady(" "DNA notice drained on idle in ${content_var}")

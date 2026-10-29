@@ -146,9 +146,13 @@ public:
             /*pScrolledMessage=*/1 );
         if (muteThisSession) sEnabled = false;
 
-        // 按钮索引在不同版本里可能是 0 或 1 基，“稍后”只在第二键（2）时跳过
+        // 按钮索引在不同版本里可能是 0 或 1 基，“稍后”只在第二键（2）时跳过。
+        // 显式传当前文件路径：不传参时 MoBu 在模态循环里会另存为新文件名
         if (canSave && pressed != 2)
-            FBApplication().FileSave();
+        {
+            const char* cur = FBApplication().FBXFileName.AsString();
+            FBApplication().FileSave( (cur && *cur) ? cur : nullptr );
+        }
     }
 
 private:

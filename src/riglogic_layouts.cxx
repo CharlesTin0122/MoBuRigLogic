@@ -22,20 +22,13 @@ void SetIfChanged( FBLabel& label, const char* text, char* cache, size_t cacheSi
     }
 }
 
-// DNA 来源行：回退命中时明确标出用的是哪一级来源，并附上被替换的路径，
-// 避免动画师误判当前跑的是哪份 DNA
+// DNA 来源行：回退命中时标出“路径已自动改写”，避免动画师误以为是原路径
 std::string DnaSourceLine( moburiglogic::DnaSource source,
-                           const std::string& resolvedPath,
-                           const std::string& sourcePath )
+                           const std::string& resolvedPath )
 {
     if (source == moburiglogic::DnaSource::Property) return std::string();
-    std::string text = "\nDNA: " + moburiglogic::FileNameOf( resolvedPath )
-        + (source == moburiglogic::DnaSource::Previous
-               ? " (restored from Source DNA Path)"
-               : " (from scene folder)");
-    if (!sourcePath.empty() && sourcePath != resolvedPath)
-        text += "\nSource: " + sourcePath;
-    return text;
+    return "\nDNA: " + moburiglogic::FileNameOf( resolvedPath )
+        + " (from scene folder, DNA Path updated)";
 }
 
 // 绑定缺失关节告警：DNA 与绑定不匹配时只提示，不阻断绑定
@@ -207,8 +200,7 @@ void RigLogicHeadLayout::RefreshStatus()
     if (mConstraint->DnaLoaded())
     {
         text += DnaSourceLine( mConstraint->DnaSourceKind(),
-                               mConstraint->ResolvedDnaPath(),
-                               mConstraint->SourceDnaPath.AsString() );
+                               mConstraint->ResolvedDnaPath() );
         text += MissingBindingLine( mConstraint->MissingBindings() );
         text += EyeLinkLine( mConstraint->GuiCount() > 0, mConstraint->EyeLinked(),
                              static_cast<bool>( mConstraint->EyeLinkage ) );
@@ -380,8 +372,7 @@ void RigLogicBodyLayout::RefreshStatus()
     if (mConstraint->DnaLoaded())
     {
         text += DnaSourceLine( mConstraint->DnaSourceKind(),
-                               mConstraint->ResolvedDnaPath(),
-                               mConstraint->SourceDnaPath.AsString() );
+                               mConstraint->ResolvedDnaPath() );
         text += MissingBindingLine( mConstraint->MissingBindings() );
     }
     SetIfChanged( mLabelStatus, text.c_str(), mStatusCache, sizeof(mStatusCache) );

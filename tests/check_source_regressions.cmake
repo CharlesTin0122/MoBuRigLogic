@@ -69,11 +69,14 @@ foreach(content_var head_content body_content)
     assert_contains("${${content_var}}" "DnaCandidates(" "scene-folder DNA fallback in ${content_var}")
     assert_contains("${${content_var}}" "mDnaSource = source" "DNA source tracking in ${content_var}")
     assert_contains("${${content_var}}" "if (key != mDnaRetryKey)" "scene-folder DNA lazy retry in ${content_var}")
-    # 回退命中时属性必须写回实际路径，并把被替换的路径留给 Source DNA Path
+    # 回退命中时属性必须写回实际路径（不再有 Source DNA Path）
     assert_contains("${${content_var}}" "DnaPath = resolvedPath.c_str()" "DNA Path reflects resolved DNA in ${content_var}")
-    assert_contains("${${content_var}}" "SourceDnaPath = propertyPath.c_str()" "previous DNA path remembered in ${content_var}")
-    # 加载失败不能修改用户配置的路径
-    assert_not_contains("${${content_var}}" "SourceDnaPath = resolvedPath" "wrong Source DNA Path write in ${content_var}")
+    assert_not_contains("${${content_var}}" "SourceDnaPath" "removed Source DNA Path in ${content_var}")
+    assert_not_contains("${${content_var}}" "Source DNA Path" "removed Source DNA Path text in ${content_var}")
+    # 通知不能在解析回调里直接弹，必须先登记到空闲队列
+    assert_contains("${${content_var}}" "DnaNoticeQueue::Push( notice )" "DNA notice queued in ${content_var}")
+    assert_contains("${${content_var}}" "DnaNoticeQueue::DrainIfReady(" "DNA notice drained on idle in ${content_var}")
+    assert_contains("${${content_var}}" "DnaNoticeQueue::OnSceneLoaded()" "DNA notice reset on load in ${content_var}")
     assert_not_contains("${${content_var}}" "mDnaFromSceneFolder" "stale fallback flag in ${content_var}")
 endforeach()
 assert_contains("${head_content}" "kSceneFolderDnaName = \"head.dna\"" "Head scene-folder DNA name")
@@ -86,6 +89,7 @@ assert_contains("${head_content}" "eyeLinkNode->ReadData( eyeLink, pEvaluateInfo
 assert_contains("${head_content}" "moburiglogic::ClampEyeStick( v )" "Head eye stick clamp")
 assert_contains("${head_content}" "if (eyeLinkOn) v += eyeLink[ guiInputs[i].axis ]" "Head eye linkage sum")
 assert_contains("${head_content}" [=["Eye Linkage"]=] "Eye Linkage property")
+assert_contains("${layout_content}" "DNA Path updated" "DNA source line reflects relocation")
 assert_contains("${layout_content}" "EyeLinkLine(" "Eye linkage status line")
 assert_not_contains("${body_content}" "EyeLinkage" "body constraint has no eye linkage")
 

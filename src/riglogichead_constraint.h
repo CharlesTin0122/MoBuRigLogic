@@ -58,7 +58,6 @@ public:
     virtual bool FbxRetrieve( FBFbxObject* pFbxObject, kFbxObjectStore pStoreWhat ) override;
 
     FBPropertyString  DnaPath;        //!< 当前实际使用的 head.dna 路径（回退命中时已写回）
-    FBPropertyString  SourceDnaPath;  //!< 只读：回退时被替换掉的路径（公司共享盘），用于回公司后自动恢复
     FBPropertyInt     LodLevel;       //!< 驱动集/BS LOD
     FBPropertyInt     InputMode;      //!< 0=表情属性(可K帧) 1=FaceBoard面板(GUI控制器)
     FBPropertyDouble  LastSolveMs;    //!< 只读：上次求解耗时
@@ -123,6 +122,7 @@ private:
     std::uint16_t ResolveLod() const;
     bool BuildBindings( std::uint16_t lod );
     std::map<std::string, FBModel*> CollectCharacterModels();   // 场景内本角色 namespace 的全部模型（短名→模型）
+    std::string CharacterNamespace() const;                     // Skeleton Root 所属角色的 namespace（含冒号）
     std::size_t ApplyPanelFramesLock( bool locked );            // 返回处理的 FRM_* 数量
 
     dna::BinaryStreamReader* mReader = nullptr;

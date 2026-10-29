@@ -66,7 +66,6 @@ public:
 
     //--- 属性
     FBPropertyString  DnaPath;        //!< 当前实际使用的 body.dna 路径（回退命中时已写回）
-    FBPropertyString  SourceDnaPath;  //!< 只读：回退时被替换掉的路径（公司共享盘），用于回公司后自动恢复
     FBPropertyInt     LodLevel;       //!< 驱动集 LOD（默认 0）
     FBPropertyDouble  LastSolveMs;    //!< 只读：上次求解耗时(ms)，性能观测
 
@@ -104,6 +103,7 @@ private:
 
     bool  LoadDna();                  // 读 DNA + 建 RigLogic/RigInstance
     void  ReleaseDna();
+    std::string CharacterNamespace() const;   // Skeleton Root 所属角色的 namespace（含冒号）
     void  InvalidateBindings();       //!< 锁内清空绑定（MoBu 销毁节点后必须立即失效，否则会解引用已释放节点）
     std::uint16_t ResolveLod() const;
     bool  BuildBindings( std::uint16_t lod ); // 按骨架根扫描场景关节，建输入/输出映射

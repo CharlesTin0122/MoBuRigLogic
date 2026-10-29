@@ -262,54 +262,38 @@ int main()
     CHECK( JoinPath( "D:/shot/", "body.dna" ) == "D:/shot/body.dna" );
     CHECK( JoinPath( "", "body.dna" ) == "body.dna" );
 
-    // 公司路径可用时优先；不可用时先试上次被替换的路径，最后用 FBX 同目录
+
+    // 属性路径优先；失效时用绑定 FBX 同目录的固定文件名
     const auto withPrimary = DnaCandidates(
-        "//studio/share/dna/body.dna", "",
-        "D:/mocap/shots/SH010/hero.fbx", "body.dna" );
+        "//studio/share/dna/body.dna", "D:/mocap/shots/SH010/hero.fbx", "body.dna" );
     CHECK( withPrimary.size() == 2 );
     CHECK( withPrimary[0] == "//studio/share/dna/body.dna" );
     CHECK( withPrimary[1] == "D:/mocap/shots/SH010/body.dna" );
 
-    // 三级顺序：属性路径 → 上次被替换的路径 → FBX 同目录
-    const auto threeLevel = DnaCandidates(
-        "D:/mocap/shots/body.dna", "//studio/share/dna/body.dna",
-        "D:/mocap/hero.fbx", "body.dna" );
-    CHECK( threeLevel.size() == 3 );
-    CHECK( threeLevel[0] == "D:/mocap/shots/body.dna" );
-    CHECK( threeLevel[1] == "//studio/share/dna/body.dna" );
-    CHECK( threeLevel[2] == "D:/mocap/body.dna" );
+    // 属性路径为空：只剩 FBX 同目录（新约束/被清空的情况）
+    const auto noPrimary = DnaCandidates( "", "D:\\mocap\\hero.fbx", "body.dna" );
+    CHECK( noPrimary.size() == 1 );
+    CHECK( noPrimary[0] == "D:\\mocap\\body.dna" );
 
-    // 属性路径为空：先用过 Source，再用 FBX 同目录（棚内拿到的文件可能从未存过公司路径）
-    const auto noPrimary = DnaCandidates(
-        "", "//studio/share/dna/body.dna", "D:\\mocap\\hero.fbx", "body.dna" );
-    CHECK( noPrimary.size() == 2 );
-    CHECK( noPrimary[0] == "//studio/share/dna/body.dna" );
-    CHECK( noPrimary[1] == "D:\\mocap\\body.dna" );
-
-    // Source 与属性路径相同：去重，只读一次
-    const auto sameSource = DnaCandidates(
-        "//studio/share/dna/body.dna", "//studio/share/dna/body.dna",
-        "D:/mocap/hero.fbx", "body.dna" );
-    CHECK( sameSource.size() == 2 );
-    CHECK( sameSource[0] == "//studio/share/dna/body.dna" );
-    CHECK( sameSource[1] == "D:/mocap/body.dna" );
-
-    // 未存盘的场景（场景路径为空）：只留前两级，不能拼出裸 "body.dna"
-    const auto unsaved = DnaCandidates(
-        "//studio/share/dna/body.dna", "D:/mocap/body.dna", "", "body.dna" );
-    CHECK( unsaved.size() == 2 );
+    // 场景未存盘（场景路径为空）：只留属性路径，不能拼出裸 "body.dna"
+    const auto unsaved = DnaCandidates( "//studio/share/dna/body.dna", "", "body.dna" );
+    CHECK( unsaved.size() == 1 );
     CHECK( unsaved[0] == "//studio/share/dna/body.dna" );
-    CHECK( unsaved[1] == "D:/mocap/body.dna" );
 
-    // 三者指向同一文件：去重，不重复读取
-    const auto samePath = DnaCandidates(
-        "D:/shot/body.dna", "D:/shot/body.dna", "D:/shot/hero.fbx", "body.dna" );
+    // 属性路径与同目录候选指向同一文件：去重，不重复读取
+    const auto samePath = DnaCandidates( "D:/shot/body.dna", "D:/shot/hero.fbx", "body.dna" );
     CHECK( samePath.size() == 1 );
 
-    // 固定文件名为空 → 不产生同目录候选
-    CHECK( DnaCandidates( "D:/a/body.dna", "", "D:/b/hero.fbx", "" ).size() == 1 );
-    // 全部为空 → 无候选（不尝试任何加载）
-    CHECK( DnaCandidates( "", "", "", "head.dna" ).empty() );
+    // 固定文件名为空 -> 不产生同目录候选
+    CHECK( DnaCandidates( "D:/a/body.dna", "D:/b/hero.fbx", "" ).size() == 1 );
+    // 全部为空 -> 无候选（不尝试任何加载，也不弹通知）
+    CHECK( DnaCandidates( "", "", "head.dna" ).empty() );
+
+    // 眼睛摇杆夹紧（保持原有用例）
+    CHECK( ClampEyeStick( 1.05 ) == 1.0 );
+    CHECK( ClampEyeStick( -1.5 ) == -1.0 );
+    CHECK( ClampEyeStick( 0.5 ) == 0.5 );
 
     return 0;
 }
+

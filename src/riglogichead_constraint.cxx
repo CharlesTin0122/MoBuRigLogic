@@ -78,6 +78,11 @@ bool RigLogicHeadConstraint::FBCreate()
 // 求值线程只写 mLastSolveMs 原子量；属性写入会触发通知，必须回到主线程
 void RigLogicHeadConstraint::EventUIIdle( HISender, HKEvent )
 {
+    // 旧版本文件恢复出来的 "Source DNA Path" 属性：MoBu 在 kCleanup 之后才恢复动态属性，
+    // 所以在空闲里清（PropertyRemove 是官方移除属性的接口）；已删除时 Find 返回空，开销忽略不计
+    if (FBProperty* legacy = PropertyList.Find( "Source DNA Path" ))
+        PropertyRemove( legacy );
+
     const double ms = mLastSolveMs.load();
     if ((double)LastSolveMs != ms) LastSolveMs = ms;
 
@@ -865,9 +870,6 @@ bool RigLogicHeadConstraint::FbxRetrieve( FBFbxObject* pFbxObject, kFbxObjectSto
     {
         // 打开新文件：清空通知去重表（待发队列不动，加载与文件事件的先后顺序不可靠）
         moburiglogic::DnaNoticeQueue::OnSceneLoaded();
-        // 旧版本文件里可能有已废弃的 Source DNA Path 属性，删掉以免属性面板出现无效项
-        if (FBProperty* legacy = PropertyList.Find( "Source DNA Path" ))
-            legacy->FBDelete();
         // 场景加载完成后重建运行时；若 SetupAllAnimationNodes 已按同一属性路径加载过则跳过，
         // 避免重复读取 DNA 并在求值可能已开始时替换运行时。
         // 属性路径打不开时会回退到 FBX 同目录的 head.dna（棚内/外拍场景）

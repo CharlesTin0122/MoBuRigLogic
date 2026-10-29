@@ -74,11 +74,6 @@ bool RigLogicBodyConstraint::FBCreate()
 // 求值线程只写 mLastSolveMs 原子量；属性写入会触发通知，必须回到主线程
 void RigLogicBodyConstraint::EventUIIdle( HISender, HKEvent )
 {
-    // 旧版本文件恢复出来的 "Source DNA Path" 属性：MoBu 在 kCleanup 之后才恢复动态属性，
-    // 所以在空闲里清（PropertyRemove 是官方移除属性的接口）；已删除时 Find 返回空，开销忽略不计
-    if (FBProperty* legacy = PropertyList.Find( "Source DNA Path" ))
-        PropertyRemove( legacy );
-
     const double ms = mLastSolveMs.load();
     if ((double)LastSolveMs != ms) LastSolveMs = ms;
 
@@ -118,6 +113,10 @@ void RigLogicBodyConstraint::EventUIIdle( HISender, HKEvent )
 
     // DNA 解析通知（自动改写 / 未找到）：由主线程空闲统一弹一条汇总消息
     moburiglogic::DnaNoticeQueue::DrainIfReady( moburiglogic::IsTransportPlaying() );
+
+    // 旧文件恢复出来的 "Source DNA Path" 属性：放在通知排空之后清理
+    if (FBProperty* legacy = PropertyList.Find( "Source DNA Path" ))
+        PropertyRemove( legacy );
 }
 
 void RigLogicBodyConstraint::FBDestroy()

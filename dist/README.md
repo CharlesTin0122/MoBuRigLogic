@@ -6,12 +6,12 @@
 
 | 文件 | 目标 MotionBuilder | 源码分支 | 源码提交 | 构建目录 |
 | --- | --- | --- | --- | --- |
-| `moburiglogic_2019.dll` | 2019 | `mobu2019` | `d9fbf16` | `build2019/` |
-| `moburiglogic_2024.dll` | 2024 | `main` | `338c97d` | `build/` |
+| `moburiglogic_2019.dll` | 2019 | `mobu2019` | `7802703` | `build2019/` |
+| `moburiglogic_2024.dll` | 2024 | `main` | `e780259` | `build/` |
 
-两个提交为同一功能节点（`fix: 并发加固（播放中不重建、绑定表入锁、失效即退场）`）在两条分支上的平行提交。
+两个提交为同一功能节点（`feat: 移除 Source DNA Path，回退改为命中即写回 + 汇总弹窗`）在两条分支上的平行提交。
 
-编译日期：2026-10-28　配置：Release / x64 / MSVC 2022 / `/MD` / C++17
+编译日期：2026-10-29　配置：Release / x64 / MSVC 2022 / `/MD` / C++17
 
 ## 版本对应关系
 

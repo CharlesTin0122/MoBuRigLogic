@@ -23,6 +23,7 @@
 
 #include <chrono>
 #include <cmath>
+#include <cstring>
 #include <map>
 #include <mutex>
 
@@ -49,6 +50,13 @@ using moburiglogic::QuatConj;
 // 绑定 FBX 同目录下的固定文件名：公司路径不可用时用来兜底（棚内/外拍常用）
 static const char* kSceneFolderDnaName = "head.dna";
 
+// FaceBoard 面板跟随 head 的原生 Parent/Child 约束（名字前会加角色 namespace）
+static const char* kPanelFollowName = "RigLogic_FaceGUI_FollowHead";
+static const char* kPanelFollowHead = "head";
+
+// 旧版本留下的动态属性：MoBu 会按文件恢复出来，空闲时移除
+static const char* kLegacyPropertyNames[] = { "Source DNA Path", "Follow Head", "Panel Offset" };
+
 // FaceBoard 眼睛摇杆：左右眼在 DNA 的 GUI 通道里，中间那只不在（需手动叠回）
 static const char* kLeftEyeStick   = "CTRL_L_eye";
 static const char* kRightEyeStick  = "CTRL_R_eye";
@@ -62,11 +70,14 @@ bool RigLogicHeadConstraint::FBCreate()
     FBPropertyPublish( this, LastSolveMs, "Last Solve Ms", nullptr, nullptr );
     FBPropertyPublish( this, LockPanelFrames, "Lock Panel Frames", nullptr, nullptr );
     FBPropertyPublish( this, EyeLinkage,   "Eye Linkage",   nullptr, nullptr );
+    FBPropertyPublish( this, ShowFacePanel, "Show Face Panel", nullptr, nullptr );
+    // 新建约束的默认值（动画师基本都走 FaceBoard 面板）；打开文件时按文件里存的值恢复
     LodLevel = 0;
-    InputMode = 0;   // 0=表情属性 1=FaceBoard面板
+    InputMode = 1;   // 0=表情属性 1=FaceBoard面板
     LastSolveMs = 0.0;
-    LockPanelFrames = false;
+    LockPanelFrames = true;
     EyeLinkage = true;
+    ShowFacePanel = false;
 
     mGroupSkeleton = ReferenceGroupAdd( "Skeleton Root", 1 );
     Deformer = false;
@@ -101,17 +112,14 @@ void RigLogicHeadConstraint::EventUIIdle( HISender, HKEvent )
         RebuildBindings();
     }
 
-    // Lock Panel Frames 改动（Python/属性面板设置）即时生效。首个空闲周期只记录当前值：
-    // FRM_* 的可选状态本身随 FBX 保存，打开场景时不覆盖用户手动改过的状态
+    // 面板状态（锁框 / 显隐 / 跟随 head）以属性为准：绑定重建后（新建、打开文件、
+    // Rebuild、换 LOD）或属性被 Python/属性面板改动时，在停播且空闲稳定后统一应用
     const int frameLock = static_cast<bool>( LockPanelFrames ) ? 1 : 0;
-    if (mAppliedFrameLock < 0)
+    const int showPanel = static_cast<bool>( ShowFacePanel ) ? 1 : 0;
+    if ((mPanelStateDirty || frameLock != mAppliedFrameLock || showPanel != mAppliedShowPanel)
+        && !playing && mStopIdleTicks >= 10 && ReferenceGet( mGroupSkeleton, 0 ))
     {
-        mAppliedFrameLock = frameLock;
-    }
-    else if (frameLock != mAppliedFrameLock)
-    {
-        mAppliedFrameLock = frameLock;
-        ApplyPanelFramesLock( frameLock == 1 );
+        ApplyPanelState();
     }
 
     // DNA 加载失败时的兜底懒重试。FbxRetrieve(kCleanup) 先于场景文件名就绪的情况存在
@@ -132,18 +140,64 @@ void RigLogicHeadConstraint::EventUIIdle( HISender, HKEvent )
     // 不在加载与重建回调里弹模态框
     moburiglogic::DnaNoticeQueue::DrainIfReady( moburiglogic::IsTransportPlaying() );
 
-    // 旧版本文件恢复出来的 "Source DNA Path" 属性：MoBu 在 kCleanup 之后才恢复动态属性，
-    // 所以在空闲里清（PropertyRemove 是官方移除属性的接口）；已删除时 Find 返回空
-    // 注意：放在通知排空之后，避免属性表变动影响弹窗
-    if (FBProperty* legacy = PropertyList.Find( "Source DNA Path" ))
-        PropertyRemove( legacy );
+    // 旧版本文件恢复出来的属性（Source DNA Path / Follow Head / Panel Offset）：
+    // MoBu 在 kCleanup 之后才恢复动态属性，所以在空闲里清（PropertyRemove 是官方移除属性的接口）；
+    // 已删除时 Find 返回空。注意：放在通知排空之后，避免属性表变动影响弹窗
+    for (const char* legacyName : kLegacyPropertyNames)
+    {
+        if (FBProperty* legacy = PropertyList.Find( legacyName ))
+            PropertyRemove( legacy );
+    }
 }
 
 void RigLogicHeadConstraint::SetPanelFramesLocked( bool locked )
 {
     LockPanelFrames = locked;
     mAppliedFrameLock = locked ? 1 : 0;   // 已在此应用，空闲回调不再重复
-    ApplyPanelFramesLock( locked );
+    ApplyPanelFramesLock( CollectCharacterModels(), locked );
+}
+
+void RigLogicHeadConstraint::SetFacePanelShown( bool shown )
+{
+    ShowFacePanel = shown;
+    mAppliedShowPanel = shown ? 1 : 0;    // 已在此应用，空闲回调不再重复
+    if (FBModel* panelRoot = FindFacePanelRoot( CollectCharacterModels() ))
+        ApplyPanelVisibility( panelRoot, shown );
+}
+
+// 面板状态统一入口（主线程空闲调用）。找不到 GRP_faceGUI 时也记为已应用：
+// 否则每个空闲周期都要扫描整个场景；合入面板后 Rebuild Bindings 或改属性会再应用一次
+void RigLogicHeadConstraint::ApplyPanelState()
+{
+    const bool locked = static_cast<bool>( LockPanelFrames );
+    const bool shown  = static_cast<bool>( ShowFacePanel );
+    mPanelStateDirty  = false;
+    mAppliedFrameLock = locked ? 1 : 0;
+    mAppliedShowPanel = shown ? 1 : 0;
+
+    const auto models = CollectCharacterModels();
+    ApplyPanelFramesLock( models, locked );
+
+    FBModel* panelRoot = FindFacePanelRoot( models );
+    if (!panelRoot)
+    {
+        mFacePanelState = 0;
+        mFacePanelFollowName.clear();
+        FBTrace( "[RigLogicHead] Face panel: GRP_faceGUI not found\n" );
+        return;
+    }
+    mFacePanelState = 1;
+    ApplyPanelVisibility( panelRoot, shown );
+    mFacePanelFollowName = EnsurePanelFollow( models, panelRoot );
+}
+
+FBModel* RigLogicHeadConstraint::FindFacePanelRoot( const std::map<std::string, FBModel*>& models )
+{
+    for (const auto& kv : models)
+    {
+        if (moburiglogic::IsFacePanelRootName( kv.first )) return kv.second;
+    }
+    return nullptr;
 }
 
 std::map<std::string, FBModel*> RigLogicHeadConstraint::CollectCharacterModels()
@@ -158,17 +212,86 @@ std::map<std::string, FBModel*> RigLogicHeadConstraint::CollectCharacterModels()
     return models;
 }
 
-std::size_t RigLogicHeadConstraint::ApplyPanelFramesLock( bool locked )
+std::size_t RigLogicHeadConstraint::ApplyPanelFramesLock(
+    const std::map<std::string, FBModel*>& models, bool locked )
 {
     std::size_t count = 0;
-    for (const auto& kv : CollectCharacterModels())
+    for (const auto& kv : models)
     {
         if (!moburiglogic::IsPanelFrameName( kv.first )) continue;
-        kv.second->Pickable = !locked;
+        // 只在状态不同时写：每次重建都会应用，避免无谓的场景通知
+        if (static_cast<bool>( kv.second->Pickable ) == locked) kv.second->Pickable = !locked;
         ++count;
     }
     FBTrace( "[RigLogicHead] Lock Panel Frames=%d: %zu FRM_* models\n", locked ? 1 : 0, count );
     return count;
+}
+
+// 面板显隐：GRP_faceGUI 和全部后代逐个设 Show（Show 不随层级继承）。
+// 用 Show 而不是 Visibility：Visibility 可 K 帧、会进求值图，Show 只影响视口显示
+std::size_t RigLogicHeadConstraint::ApplyPanelVisibility( FBModel* panelRoot, bool shown )
+{
+    std::size_t count = 0;
+    std::vector<FBModel*> stack( 1, panelRoot );
+    while (!stack.empty())
+    {
+        FBModel* m = stack.back();
+        stack.pop_back();
+        if (static_cast<bool>( m->Show ) != shown) m->Show = shown;
+        ++count;
+        for (int i = 0; i < m->Children.GetCount(); ++i) stack.push_back( m->Children[i] );
+    }
+    FBTrace( "[RigLogicHead] Show Face Panel=%d: %zu models\n", shown ? 1 : 0, count );
+    return count;
+}
+
+// 面板跟随 head：交给 MoBu 原生 Parent/Child 约束，不在 RigLogic 求值里写面板变换。
+// offset 由原生约束自己存进 FBX；已有约束 GRP_faceGUI 的 Parent/Child 就复用
+// （不改它的 Active，用户在 Navigator 里关掉的保持关闭），打开文件、反复重建都不会重复创建
+std::string RigLogicHeadConstraint::EnsurePanelFollow(
+    const std::map<std::string, FBModel*>& models, FBModel* panelRoot )
+{
+    FBScene* scene = FBSystem().Scene;
+    if (!scene) return std::string();
+    for (int i = 0; i < scene->Constraints.GetCount(); ++i)
+    {
+        FBConstraint* c = scene->Constraints[i];
+        if (!c || c == this) continue;
+        const char* desc = c->Description.AsString();
+        if (!desc || std::strcmp( desc, "Parent-Child" ) != 0) continue;
+        if (c->ReferenceGroupGetCount() < 2) continue;
+        for (int r = 0; r < c->ReferenceGetCount( 0 ); ++r)
+        {
+            if (c->ReferenceGet( 0, r ) == panelRoot)
+                return std::string( c->LongName.AsString() );
+        }
+    }
+
+    // 找 head；没有就退回 Skeleton Root 引用的模型（通常拖进来的就是 head）
+    FBModel* head = nullptr;
+    const auto itHead = models.find( kPanelFollowHead );
+    if (itHead != models.end()) head = itHead->second;
+    if (!head) head = static_cast<FBModel*>( ReferenceGet( mGroupSkeleton, 0 ) );
+    if (!head) return std::string();
+
+    FBConstraint* follow = FBConstraintManager::TheOne().TypeCreateConstraint( "Parent/Child" );
+    if (!follow)
+    {
+        FBTrace( "[RigLogicHead] Failed to create Parent/Child constraint for face panel\n" );
+        return std::string();
+    }
+    const std::string ns = CharacterNamespace();
+    if (ns.empty()) follow->Name = kPanelFollowName;
+    else follow->LongName = ( ns + kPanelFollowName ).c_str();
+    // 引用组：0=Constrained object (Child)，1=Source (Parent)
+    follow->ReferenceAdd( 0, panelRoot );
+    follow->ReferenceAdd( 1, head );
+    follow->Snap();          // 记录当前偏移（相当于 Maya 的 maintain offset）
+    follow->Active = true;
+    const std::string name( follow->LongName.AsString() );
+    FBTrace( "[RigLogicHead] Face panel follows %s via %s\n",
+             head->LongName.AsString(), name.c_str() );
+    return name;
 }
 
 // 面部表情回到中立（Zero Expressions 按钮）：
@@ -616,7 +739,8 @@ void RigLogicHeadConstraint::SetupAllAnimationNodes()
     const auto validLod = ResolveLod();
     LodLevel = static_cast<int>( validLod );
     mInst->setLOD( validLod );
-    BuildBindings( validLod );
+    // 绑定成功（新建/打开文件/重建/换 LOD）后，空闲时按属性重新应用面板状态
+    if (BuildBindings( validLod )) mPanelStateDirty = true;
     mAppliedLod = static_cast<int>( validLod );
     mLastEvalId = -1;
 }

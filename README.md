@@ -255,7 +255,7 @@ ctest --test-dir build -C Release --output-on-failure
 2. 将角色的 `head` 关节拖入约束的 `Skeleton Root` 引用组。
 3. 在 `DNA File` 中选择对应的 `head.dna`。
 4. 设置 `LOD Level`。
-5. 选择 `Input Mode`：
+5. 选择 `Input Mode`（新建约束默认 FaceBoard Panel）：
    - `Expression Properties (K-frame on constraint)`：使用约束上的表情属性。
    - `FaceBoard Panel (drive by CTRL_* controls)`：使用 FaceBoard 控制器。
 6. 勾选约束的 `Active`。
@@ -265,7 +265,17 @@ ctest --test-dir build -C Release --output-on-failure
    - FaceBoard 面板：DNA 读取的全部表情控制器（`CTRL_C_jaw` 等）位移归零。面板框控制器 `CTRL_faceGUI`、`CTRL_faceAndEyesAimFollowHeadGUI`、`CTRL_faceTweakersGUI` 及开关类控制器不被 DNA 读取，不会移动。
    - 表情属性模式：约束上的全部表情属性归零。
    - 控制器若已有关键帧，归零只改当前值，切换帧后会被关键帧覆盖；需要保留请手动 K 帧。
-10. 勾选 `Lock Panel Frames` 可让 FaceBoard 面板的框模型（`FRM_*`）不可在视图中选中（即关闭 Enable Selection），方便动画师点选 `CTRL_*` 控制器；需要调整面板时取消勾选即可恢复。只作用于本角色 namespace，状态随场景保存，也可用 Python 设置约束属性 `Lock Panel Frames`。
+10. 勾选 `Lock Panel Frames`（新建约束默认勾选）可让 FaceBoard 面板的框模型（`FRM_*`）不可在视图中选中（即关闭 Enable Selection），方便动画师点选 `CTRL_*` 控制器；需要调整面板时取消勾选即可恢复。只作用于本角色 namespace，也可用 Python 设置约束属性 `Lock Panel Frames`。
+11. 勾选 `Show Face Panel` 显示 FaceBoard 面板（`GRP_faceGUI` 及全部后代），新建约束默认隐藏。用的是模型的 `Show`（只影响视口显示），不是可 K 帧的 `Visibility`。
+
+#### 面板状态与跟随 head
+
+- **属性是唯一的真相来源**：每次绑定重建（新建约束、打开文件、`Rebuild Bindings`、换 LOD/输入模式）以及修改 `Lock Panel Frames` / `Show Face Panel` 后，插件都会在停播、UI 空闲时按属性重新设置 `FRM_*` 的可选状态和面板的显示状态。在场景里手动改过的 `FRM_*` Enable Selection 或面板显隐会被覆盖，要改请改约束属性。
+- **面板跟随 head**：绑定成功后插件会建一个 MoBu 原生 `Parent/Child` 约束 `<namespace>RigLogic_FaceGUI_FollowHead`（Child = `GRP_faceGUI`，Parent = `head`；找不到 `head` 时用 `Skeleton Root` 引用的模型），创建时 Snap 保留当前偏移。偏移由原生约束自己存进 FBX，重开不漂移；跟随不经过 RigLogic 求值，切换和创建都不会触发绑定重建。
+- 场景里已有以 `GRP_faceGUI` 为 Child 的 `Parent/Child` 约束时直接复用，不再新建，也不改它的 `Active`。想暂停跟随，在 Navigator 里取消这个约束的 `Active` 即可；**直接删除它的话，下次绑定重建时会重新创建**。
+- 删除 Head 约束时不会连带删除跟随约束，需要的话手动删除。
+- 状态区显示 `Face panel: following head (RigLogic_FaceGUI_FollowHead)`；本角色 namespace 里没有 `GRP_faceGUI` 时显示 `Face panel: GRP_faceGUI not found`（合入面板后点 `Rebuild Bindings` 重新应用）。
+- 打开旧版本保存的文件时，旧面板方案残留的 `Follow Head`、`Panel Offset` 属性会被自动移除；文件里存的 `Input Mode`、`Lock Panel Frames`、`Show Face Panel` 按文件值恢复（旧文件没有 `Show Face Panel` 时按默认隐藏）。
 
 如果使用 FaceBoard 模式，GUI 控制器不一定是 `head` 的子节点。插件会在相同角色 namespace 内继续查找对应控制器。
 
@@ -376,7 +386,9 @@ MoBu 侧现状与处理：
 
 | 属性 | 说明 |
 | --- | --- |
-| `Input Mode` / `InputMode` | `0` 为动态表情属性，`1` 为 FaceBoard GUI 控制器 |
+| `Input Mode` / `InputMode` | `0` 为动态表情属性，`1`（新建默认）为 FaceBoard GUI 控制器 |
+| `Lock Panel Frames` / `LockPanelFrames` | `1`（新建默认）：面板 `FRM_*` 不可选中；`0` 恢复可选 |
+| `Show Face Panel` / `ShowFacePanel` | `0`（新建默认）：隐藏 `GRP_faceGUI` 及全部后代；`1` 显示（模型 `Show`，不进求值图） |
 | `Eye Linkage` / `EyeLinkage` | `1`（默认）：把 `CTRL_C_eye` 的位移叠加到左右眼摇杆，复现 Maya 的双眼联动；`0` 关闭联动，只读 `CTRL_L_eye` / `CTRL_R_eye` |
 
 不同 MetaHuman DNA 的输入、输出、LOD 和 BlendShape 数量可能不同。README 不把某个角色的固定数量作为所有 DNA 的保证。

@@ -73,7 +73,6 @@ foreach(content_var head_content body_content)
     # 回退命中时属性必须写回实际路径（不再有 Source DNA Path）
     assert_contains("${${content_var}}" "DnaPath = resolvedPath.c_str()" "DNA Path reflects resolved DNA in ${content_var}")
     assert_not_contains("${${content_var}}" "SourceDnaPath" "removed Source DNA Path member in ${content_var}")
-    assert_contains("${${content_var}}" [=[PropertyList.Find( "Source DNA Path" )]=] "legacy Source property lookup in ${content_var}")
     assert_contains("${${content_var}}" "PropertyRemove( legacy )" "legacy Source property removal in ${content_var}")
     # 通知不能在解析回调里直接弹，必须先登记到空闲队列
     assert_contains("${${content_var}}" "DnaNoticeQueue::Push( notice )" "DNA notice queued in ${content_var}")
@@ -82,6 +81,10 @@ foreach(content_var head_content body_content)
 endforeach()
 assert_contains("${head_content}" "kSceneFolderDnaName = \"head.dna\"" "Head scene-folder DNA name")
 assert_contains("${body_content}" "kSceneFolderDnaName = \"body.dna\"" "Body scene-folder DNA name")
+assert_contains("${body_content}" [=[PropertyList.Find( "Source DNA Path" )]=] "Body legacy Source property lookup")
+# Head 还要清掉旧面板分支留下的 Follow Head / Panel Offset
+assert_contains("${head_content}" [=[kLegacyPropertyNames[] = { "Source DNA Path", "Follow Head", "Panel Offset" }]=] "Head legacy property names")
+assert_contains("${head_content}" "PropertyList.Find( legacyName )" "Head legacy property lookup")
 
 # 眼睛联动：CTRL_C_eye 不在 DNA GUI 通道里，插件叠到左右眼摇杆上并夹紧
 assert_contains("${head_content}" "kCentreEyeStick = \"CTRL_C_eye\"" "Head eye linkage centre stick")
@@ -125,6 +128,34 @@ assert_not_contains("${head_content}" "ZeroAllExpressions" "legacy expression-on
 assert_contains("${head_content}" [=["Lock Panel Frames"]=] "Lock Panel Frames property")
 assert_contains("${head_content}" "Pickable = !locked" "FRM_* selection toggle")
 assert_contains("${layout_content}" "SetPanelFramesLocked(" "Lock Panel Frames checkbox")
+
+# 新建约束默认：FaceBoard 模式、锁面板框、隐藏面板
+assert_contains("${head_content}" "InputMode = 1;" "Head default FaceBoard input mode")
+assert_contains("${head_content}" "LockPanelFrames = true;" "Head default locked panel frames")
+assert_contains("${head_content}" "ShowFacePanel = false;" "Head default hidden face panel")
+assert_contains("${head_content}" [=["Show Face Panel"]=] "Show Face Panel property")
+assert_contains("${layout_content}" "SetFacePanelShown(" "Show Face Panel checkbox")
+assert_contains("${layout_content}" "FacePanelLine(" "Face panel status line")
+# 面板状态在绑定重建后由主线程空闲应用（新建约束时默认值立即生效），不再“首帧只记录”
+assert_contains("${head_content}" "if (BuildBindings( validLod )) mPanelStateDirty = true;" "panel state reapplied after rebuild")
+assert_contains("${head_content}" "ApplyPanelState();" "panel state applied on idle")
+assert_not_contains("${head_content}" "if (mAppliedFrameLock < 0)" "first-idle record-only frame lock")
+assert_contains("${head_content}" "m->Show = shown" "face panel visibility via Show")
+assert_not_contains("${head_content}" "->Visibility" "face panel visibility via animatable Visibility")
+# 跟随 head 用原生 Parent/Child 约束，不在 RigLogic 求值里写面板变换
+assert_contains("${head_content}" [=[TypeCreateConstraint( "Parent/Child" )]=] "native Parent/Child panel follow")
+assert_contains("${head_content}" [=["Parent-Child"]=] "reuse existing panel follow constraint")
+assert_contains("${head_content}" "Snap();" "panel follow keeps offset")
+string(FIND "${head_content}" "bool RigLogicHeadConstraint::AnimationNodeNotify" notify_begin)
+string(FIND "${head_content}" "bool RigLogicHeadConstraint::FbxStore" notify_end)
+if(notify_begin EQUAL -1 OR notify_end LESS_EQUAL notify_begin)
+    message(FATAL_ERROR "Cannot locate Head AnimationNodeNotify body")
+endif()
+math(EXPR notify_length "${notify_end} - ${notify_begin}")
+string(SUBSTRING "${head_content}" ${notify_begin} ${notify_length} notify_content)
+foreach(needle "GRP_faceGUI" "FacePanel" "PanelFollow" "Panel Offset" "Follow Head")
+    assert_not_contains("${notify_content}" "${needle}" "face panel logic in Head AnimationNodeNotify")
+endforeach()
 
 # HIK 激活时 Lcl Rotation 输出节点读到全局旋转：驱动输入必须由全局反推局部
 foreach(content_var head_content body_content)

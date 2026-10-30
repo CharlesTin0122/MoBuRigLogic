@@ -232,6 +232,15 @@ int main()
     CHECK( !IsPanelFrameName( "GRP_FRM_x" ) );
     CHECK( !IsPanelFrameName( "frm_faceGUI" ) );
 
+    // ---- Show Face Panel / 跟随 head：只认 GRP_faceGUI（短名） ----
+    CHECK( IsFacePanelRootName( "GRP_faceGUI" ) );
+    CHECK( !IsFacePanelRootName( "GRP_faceGUI1" ) );
+    CHECK( !IsFacePanelRootName( "headGui_grp" ) );
+    CHECK( !IsFacePanelRootName( "CTRL_faceGUI" ) );
+    CHECK( !IsFacePanelRootName( "FRM_faceGUI" ) );
+    CHECK( !IsFacePanelRootName( "grp_faceGUI" ) );
+    CHECK( !IsFacePanelRootName( "" ) );
+
     // ---- 眼睛摇杆夹紧：DNA GUI 域是 [-1,1]，越界会被映射外插成 0 ----
     CHECK( ClampEyeStick( 0.0 ) == 0.0 );
     CHECK( ClampEyeStick( 0.5 ) == 0.5 );

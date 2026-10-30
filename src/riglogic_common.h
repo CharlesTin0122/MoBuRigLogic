@@ -184,6 +184,12 @@ inline bool IsPanelFrameName( const std::string& name )
     return name.size() > 4 && name.compare( 0, 4, "FRM_" ) == 0;
 }
 
+// FaceBoard 面板根节点（剥掉 namespace 的短名）：显隐与跟随 head 都作用在它上面
+inline bool IsFacePanelRootName( const std::string& name )
+{
+    return name == "GRP_faceGUI";
+}
+
 // DNA GUI 控制名 "CTRL_C_jaw.ty" → 控制器模型名 "CTRL_C_jaw"（去重、保持首次出现顺序）。
 // 只含 DNA 实际读取的表情控制器：面板框（CTRL_faceGUI 等）、开关类控制器天然不在其中
 template <typename NameRange>

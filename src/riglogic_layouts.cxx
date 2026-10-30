@@ -46,6 +46,15 @@ std::string EyeLinkLine( bool hasGuiInputs, bool linked, bool enabled )
     return enabled ? "\nEye linkage: CTRL_C_eye -> L/R (tx,ty)"
                    : "\nEye linkage: off (Eye Linkage unchecked)";
 }
+
+// 面板跟随状态：ApplyPanelState 尚未运行时不显示
+std::string FacePanelLine( int state, const std::string& followName )
+{
+    if (state < 0) return std::string();
+    if (state == 0) return "\nFace panel: GRP_faceGUI not found";
+    if (followName.empty()) return "\nFace panel: follow constraint not created";
+    return "\nFace panel: following head (" + followName + ")";
+}
 } // namespace
 
 // ================================================================= Head
@@ -116,12 +125,17 @@ void RigLogicHeadLayout::UICreate()
                0,    kFBAttachTop,    "ButtonZero",    1.0,
                150,  kFBAttachNone,   nullptr,         1.0,
                lH,   kFBAttachNone,   nullptr,         1.0 );
+    AddRegion( "ButtonShowPanel", "ButtonShowPanel",
+               lS,   kFBAttachRight,  "ButtonLockFrames", 1.0,
+               0,    kFBAttachTop,    "ButtonLockFrames", 1.0,
+               150,  kFBAttachNone,   nullptr,         1.0,
+               lH,   kFBAttachNone,   nullptr,         1.0 );
 
     AddRegion( "LabelStatus", "LabelStatus",
                lS,   kFBAttachLeft,   "",              1.0,
                lS,   kFBAttachBottom, "ButtonRebuild", 1.0,
                -lS,  kFBAttachRight,  "",              1.0,
-               90,   kFBAttachNone,   nullptr,         1.0 );
+               110,  kFBAttachNone,   nullptr,         1.0 );
 
     SetControl( "LabelDna",      mLabelDna );
     SetControl( "EditDnaPath",   mEditDnaPath );
@@ -131,6 +145,7 @@ void RigLogicHeadLayout::UICreate()
     SetControl( "ButtonRebuild", mButtonRebuild );
     SetControl( "ButtonZero",    mButtonZero );
     SetControl( "ButtonLockFrames", mButtonLockFrames );
+    SetControl( "ButtonShowPanel",  mButtonShowPanel );
     SetControl( "LabelStatus",   mLabelStatus );
 }
 
@@ -157,6 +172,11 @@ void RigLogicHeadLayout::UIConfigure()
     mButtonLockFrames.Style = kFBCheckbox;
     mButtonLockFrames.State = static_cast<bool>( mConstraint->LockPanelFrames ) ? 1 : 0;
     mButtonLockFrames.OnClick.Add( this, (FBCallback)&RigLogicHeadLayout::EventLockFrames );
+
+    mButtonShowPanel.Caption = "Show Face Panel";
+    mButtonShowPanel.Style = kFBCheckbox;
+    mButtonShowPanel.State = static_cast<bool>( mConstraint->ShowFacePanel ) ? 1 : 0;
+    mButtonShowPanel.OnClick.Add( this, (FBCallback)&RigLogicHeadLayout::EventShowPanel );
 
     mLabelStatus.WordWrap = true;
 }
@@ -204,6 +224,8 @@ void RigLogicHeadLayout::RefreshStatus()
         text += MissingBindingLine( mConstraint->MissingBindings() );
         text += EyeLinkLine( mConstraint->GuiCount() > 0, mConstraint->EyeLinked(),
                              static_cast<bool>( mConstraint->EyeLinkage ) );
+        text += FacePanelLine( mConstraint->FacePanelState(),
+                               mConstraint->FacePanelFollowName() );
     }
     SetIfChanged( mLabelStatus, text.c_str(), mStatusCache, sizeof(mStatusCache) );
 }
@@ -228,6 +250,8 @@ void RigLogicHeadLayout::EventIdle( HISender, HKEvent )
     // 属性被 Python/属性面板改动时同步复选框
     const int lockState = static_cast<bool>( mConstraint->LockPanelFrames ) ? 1 : 0;
     if ((int)mButtonLockFrames.State != lockState) mButtonLockFrames.State = lockState;
+    const int showState = static_cast<bool>( mConstraint->ShowFacePanel ) ? 1 : 0;
+    if ((int)mButtonShowPanel.State != showState) mButtonShowPanel.State = showState;
 }
 
 void RigLogicHeadLayout::EventBrowse( HISender, HKEvent )
@@ -267,6 +291,11 @@ void RigLogicHeadLayout::EventZeroAll( HISender, HKEvent )
 void RigLogicHeadLayout::EventLockFrames( HISender, HKEvent )
 {
     mConstraint->SetPanelFramesLocked( (int)mButtonLockFrames.State == 1 );
+}
+
+void RigLogicHeadLayout::EventShowPanel( HISender, HKEvent )
+{
+    mConstraint->SetFacePanelShown( (int)mButtonShowPanel.State == 1 );
 }
 
 // ================================================================= Body
